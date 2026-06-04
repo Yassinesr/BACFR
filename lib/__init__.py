@@ -8,3 +8,4 @@ from lib.BACFR import BACFR
 from lib.BACFR_Enhanced import BACFR_Enhanced
 from lib.BACFR_Enhanced_v3 import BACFR_Enhanced_v3
 from .BACFR_Enhanced_v3_3 import BACFR_Enhanced_v3_3
+from .PolypPVT_BACFR import PolypPVT_BACFR

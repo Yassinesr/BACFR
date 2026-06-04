@@ -175,9 +175,13 @@ def train(opt, args):
     backbone_params = []
     decoder_params = []
 
+    # Backbone params (ResNet layer1-4 or PVT-v2 stages) train at base lr.
+    # Stem-like params (resnet.conv1/bn1/maxpool) stay frozen — original BACFR
+    # design. PVT-v2 stages are identified by 'block'/'patch_embed'/'norm'.
+    _stage_keys = ('layer', 'block', 'patch_embed', 'norm')
     for name, param in model.named_parameters():
         if 'resnet' in name or 'backbone' in name:
-            if 'layer' in name:
+            if any(k in name for k in _stage_keys):
                 backbone_params.append(param)
         else:
             decoder_params.append(param)
@@ -347,7 +351,12 @@ def train(opt, args):
 
 if __name__ == '__main__':
     args = parse_args()
-    config = 'configs/BACFR_Enhanced_v3_3.yaml'
+    # Honor --config from CLI; fall back to BACFR_Enhanced_v3_3.yaml when the
+    # caller didn't pass one (parse_args' default points at a stale path).
+    config = args.config
+    if not os.path.isfile(config):
+        config = 'configs/BACFR_Enhanced_v3_3.yaml'
+    print(f'[Train_patch] using config: {config}')
     opt = load_config(config)
     train(opt, args)
 

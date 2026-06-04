@@ -210,7 +210,10 @@ def test(opt, args, out_dir, pth, dt_path):
 
 if __name__ == '__main__':
     args = parse_args()
-    config = 'configs/BACFR_Enhanced_v3_3.yaml'
+    config = args.config
+    if not os.path.isfile(config):
+        config = 'configs/BACFR_Enhanced_v3_3.yaml'
+    print(f'[Test_patch_tta] using config: {config}')
     opt = load_config(config)
 
     # Change these two paths to point at your epoch-2 checkpoint and desired output
