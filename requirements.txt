@@ -1,0 +1,19 @@
+torch
+torchvision
+tqdm
+easydict
+pyyaml
+opencv-python
+thop
+tabulate
+scipy
+
+
+首先来说我的模型，在checkpoints/BACFR目录下，你可以找到完整的最优秀的一次训练结果。一共20个epoch，所以保存了20个权重文件，你可以从log文件中查看训练过程中保存的日志内容。BACFR.yaml和BACFR.py是模型文件。Train_patch.py是训练代码。
+此外，在results_cl目录下你可以找到在不同基准下对测试集的优化结果。包括完整模型和消融实验的结果。
+
+对于你的训练流程。首先你需要在configs目录下创建一个yaml文件，保存你的训练配置，超参数等。然后在lib目录下搭建你的模型代码文件。然后调用run目录下的Train_patch.py文件进行训练。对于整体的训练流程你需要研读自己了解大致的训练过程和每个参数的作用。测试时，调用run目录下的Test_patch.py文件即可，同样，里面的参数你也需要自己掌握。在lib目录下，同样保存了UACANET原项目中其他内容，主干和loss都是调用UACANET中写好的。你可以通过代码跳转进行查看。
+
+First, let's talk about my model. In the checkpoints/BACFR directory, you can find the complete best result of one training session. There are a total of 20 epochs, so 20 weight files have been saved. You can view the log contents during the training process from the log files. BACFR.yaml and BACFR.py are the model files. Train_patch.py is the training code.
+In addition, in the results_cl directory, you can find the optimized results for the test set under different benchmarks. This includes the results of the complete model and ablation experiments. 
+For your training process, first, you need to create a yaml file in the configs directory to save your training configuration, hyperparameters, etc. Then, build your model code files in the lib directory. Finally, call the Train_patch.py file in the run directory to start the training. For the overall training process, you need to study and understand the general training procedure and the functions of each parameter. During testing, simply call the Test_patch.py file in the run directory. Similarly, you also need to master the parameters inside. In the lib directory, other contents from the original UACANET project are also saved. The backbone and loss are all called from the UACANET code. You can view them through code navigation.
