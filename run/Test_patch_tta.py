@@ -208,6 +208,26 @@ def test(opt, args, out_dir, pth, dt_path):
                             refineds[i].cpu().numpy().astype(np.uint8) * 255)
 
 
+import argparse
+import glob
+
+
+def _find_latest_ckpt(ckpt_dir):
+    """Pick 'best.pth' if present, else the highest epoch_N.pth in `ckpt_dir`."""
+    best = os.path.join(ckpt_dir, 'best.pth')
+    if os.path.isfile(best):
+        return best
+    candidates = glob.glob(os.path.join(ckpt_dir, 'epoch_*.pth'))
+    if not candidates:
+        return None
+    def _epoch(p):
+        try:
+            return int(os.path.basename(p).split('_')[1].split('.')[0])
+        except Exception:
+            return -1
+    return max(candidates, key=_epoch)
+
+
 if __name__ == '__main__':
     args = parse_args()
     config = args.config
@@ -216,10 +236,27 @@ if __name__ == '__main__':
     print(f'[Test_patch_tta] using config: {config}')
     opt = load_config(config)
 
-    # Change these two paths to point at your epoch-2 checkpoint and desired output
-    pth = 'checkpoints/BACFR_Enhanced_v3_3/epoch_4.pth'
-    out_dir = 'results_cl/BACFR_FCT_TTA'
-    dt_path = "/home/yassine/projects/UACANet-main/results_cl/paper_results/PraNet-results/PraNet"
+    # Test-time overrides (CLI > config-derived defaults > legacy hardcoded fallbacks).
+    extra = argparse.ArgumentParser(add_help=False)
+    extra.add_argument('--pth', type=str, default=None,
+                       help='checkpoint .pth path; default: latest epoch_*.pth in '
+                            'Test.Checkpoint.checkpoint_dir')
+    extra.add_argument('--out_dir', type=str, default=None,
+                       help='output directory; default: results_cl/<ckpt_dir_basename>_TTA')
+    extra.add_argument('--dt_path', type=str, default=None,
+                       help='coarse-mask source root (must contain per-testset subdirs)')
+    extra_args, _ = extra.parse_known_args()
+
+    ckpt_dir = opt.Test.Checkpoint.checkpoint_dir
+    pth = extra_args.pth or _find_latest_ckpt(ckpt_dir)
+    if pth is None:
+        raise FileNotFoundError(
+            f'No checkpoint found in {ckpt_dir}. Pass --pth or train first.')
+
+    out_dir = extra_args.out_dir or os.path.join(
+        'results_cl', os.path.basename(ckpt_dir.rstrip('/')) + '_TTA')
+    dt_path = extra_args.dt_path or \
+        "/home/yassine/projects/UACANet-main/results_cl/paper_results/PraNet-results/PraNet"
 
     model = eval(opt.Model.name)(
         channels=opt.Model.channels,
@@ -229,9 +266,11 @@ if __name__ == '__main__':
         use_dual_heads=getattr(opt.Model, 'use_dual_heads', False),
         use_boundary_contrast=getattr(opt.Model, 'use_boundary_contrast', False),
         use_hf_gate=getattr(opt.Model, 'use_hf_gate', False),
+        use_flip_consistency=getattr(opt.Model, 'use_flip_consistency', False),
         edge_dist_mode=getattr(opt.Model, 'edge_dist_mode', 'cdist'),
     )
 
     print(f"Running TTA inference: {pth} -> {out_dir}")
+    print(f"  coarse-mask source: {dt_path}")
     test(opt, args, out_dir, pth, dt_path)
     print("Done. Now run your eval script on this folder.")
