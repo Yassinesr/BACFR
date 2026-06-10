@@ -149,6 +149,9 @@ def train(opt, args):
         use_hf_gate=getattr(opt.Model, 'use_hf_gate', False),
         use_flip_consistency=getattr(opt.Model, 'use_flip_consistency', False),
         edge_dist_mode=getattr(opt.Model, 'edge_dist_mode', 'cdist'),
+        hf_gate_stage=getattr(opt.Model, 'hf_gate_stage', 'x4'),
+        aux_lambda_peak=getattr(opt.Model, 'aux_lambda_peak', 0.30),
+        flip_consistency_max=getattr(opt.Model, 'flip_consistency_max', 0.30),
     )
 
     # Pass loss weights from config (kept for backward compatibility)

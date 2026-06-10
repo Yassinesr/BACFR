@@ -175,6 +175,8 @@ class PolypPVT_BACFR(nn.Module):
                  use_flip_consistency=True,
                  use_mask_input=True,
                  flip_consistency_max=0.3,
+                 hf_gate_stage='x4',           # NEW: 'x3' (H/16, 320ch) or 'x4' (H/32, 512ch)
+                 aux_lambda_peak=0.30,         # NEW: peak of dual-head aux loss schedule
                  edge_dist_mode='cdist',
                  beta_uncertainty=0.5,
                  gamma_consistency=1.0,
@@ -191,6 +193,8 @@ class PolypPVT_BACFR(nn.Module):
         self.use_flip_consistency = use_flip_consistency
         self.use_mask_input = use_mask_input
         self.flip_consistency_max = flip_consistency_max
+        self.hf_gate_stage = hf_gate_stage
+        self.aux_lambda_peak = aux_lambda_peak
         self.beta_u = beta_uncertainty
         self.gamma_cons = gamma_consistency
 
@@ -198,6 +202,8 @@ class PolypPVT_BACFR(nn.Module):
             print('[PolypPVT_BACFR] use_boundary_contrast not supported; ignoring.')
         if use_mccpb:
             print('[PolypPVT_BACFR] use_mccpb not supported; ignoring.')
+        if use_hf_gate and hf_gate_stage not in ('x3', 'x4'):
+            raise ValueError(f"hf_gate_stage must be 'x3' or 'x4', got {hf_gate_stage!r}")
 
         self.register_buffer('current_epoch', torch.zeros(1, dtype=torch.long))
 
@@ -244,9 +250,11 @@ class PolypPVT_BACFR(nn.Module):
             nn.init.zeros_(self.mask_to_image[-1].weight)
             nn.init.zeros_(self.mask_to_image[-1].bias)
 
-        # ---- HFGate on PVT x4 (512 channels) ----
+        # ---- HFGate on PVT stage 3 (H/16, 320 ch) or stage 4 (H/32, 512 ch).
+        # Stage 3 matches BACFR's H/16 placement on Res2Net x4; stage 4 was
+        # the original (incorrect) port — too coarse for HF gating (8x8 at 256^2).
         if use_hf_gate:
-            self.hf_gate = HFGate(512)
+            self.hf_gate = HFGate(320 if hf_gate_stage == 'x3' else 512)
 
         # ---- Dual heads on sam_feature ----
         if use_dual_heads:
@@ -269,7 +277,12 @@ class PolypPVT_BACFR(nn.Module):
     def _lambda_aux(self):
         if not self.use_dual_heads:
             return 0.0
-        sched = [0.00, 0.15, 0.30, 0.30, 0.30, 0.30, 0.28, 0.22, 0.12, 0.05]
+        # Shape: ramp up, hold, decay. Peak scales with aux_lambda_peak so
+        # PVT's narrower decoder (32ch vs BACFR's 64ch) gets less aux
+        # gradient pressure. Default 0.30 reproduces BACFR's behavior.
+        peak = self.aux_lambda_peak
+        sched = [0.00, peak * 0.5, peak, peak, peak, peak,
+                 peak * 0.93, peak * 0.73, peak * 0.4, peak * 0.17]
         return sched[max(0, min(self._epoch(), len(sched) - 1))]
 
     def _lambda_flip(self):
@@ -289,7 +302,10 @@ class PolypPVT_BACFR(nn.Module):
         x1, x2, x3, x4 = pvt[0], pvt[1], pvt[2], pvt[3]
 
         if self.use_hf_gate:
-            x4 = self.hf_gate(x4)
+            if self.hf_gate_stage == 'x3':
+                x3 = self.hf_gate(x3)
+            else:
+                x4 = self.hf_gate(x4)
 
         # CIM
         x1 = self.ca(x1) * x1
