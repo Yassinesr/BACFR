@@ -1,0 +1,102 @@
+# Phase 2 (REVISED after Phase-1 ablations) — vanilla + 352 resolution.
+#
+# Phase-1 findings:
+#   P1.3 vanilla (no boosters, 256, Adam)  -> 0.8677  (+0.014 vs 0.854 baseline)  WINNER
+#   P1.1 res352  (boosters on,  352, Adam) -> 0.8594  (+0.005; resolution helps)
+#   P1.2 adamw   (boosters on,  256, AdamW)-> 0.8443  (-0.010; AdamW HURTS)
+#
+# So: boosters off + Adam/PolyLr (NOT AdamW) + 352 resolution. Combines the
+# two positive signals that were never tested together.
+
+Model:
+  name: PolypPVT_BACFR
+  channels: 32
+  output_stride: 16
+  pretrained: true
+  use_mccpb: false
+  use_dual_heads: false            # boosters OFF — they were net-negative on PVT
+  use_boundary_contrast: false
+  use_hf_gate: false
+  use_flip_consistency: false
+  edge_dist_mode: cdist
+
+Train:
+  Dataset:
+    type: 'PatchDataset'
+    root: 'dataset/polyppvt-traindataset/PatchesDataset-IOU-fusion/'
+    transform_list:
+      resize:
+        size: [352, 352]           # resolution lever (+0.005 in P1.1)
+      random_flip:
+        lr: True
+        ud: True
+      random_rotate:
+        range: [0, 359]
+      tonumpy: ~
+      normalize:
+        mean: [0.485, 0.456, 0.406]
+        std: [0.229, 0.224, 0.225]
+      totensor: ~
+
+  Dataloader:
+    batch_size: 4                  # 352^2; no FCT-triple now so 4 is comfortable, can try 8
+    shuffle: True
+    num_workers: 8
+    pin_memory: False
+
+  Optimizer:
+    type: 'Adam'                   # revert from AdamW — it hurt in P1.2
+    lr: 1.0e-05
+    weight_decay: 0.0
+    clip: 0.5
+    mixed_precision: True
+
+  Scheduler:
+    type: 'PolyLr'                 # revert from CosineLr
+    epoch: 10
+    gamma: 0.9
+    minimum_lr: 1.0e-08
+    warmup_iteration: 300
+
+  Checkpoint:
+    checkpoint_epoch: 1
+    checkpoint_dir: 'checkpoints/PolypPVT_BACFR_P2_vanilla352'
+
+Eval:
+  Dataset:
+    type: 'PatchDataset'
+    root: 'dataset/polyppvt-traindataset/PatchesDataset-IOU-fusion/'
+    transform_list:
+      resize:
+        size: [352, 352]
+      tonumpy: ~
+      normalize:
+        mean: [0.485, 0.456, 0.406]
+        std: [0.229, 0.224, 0.225]
+      totensor: ~
+
+  Dataloader:
+    num_workers: 8
+    pin_memory: True
+
+  Checkpoint:
+    checkpoint_dir: 'checkpoints/PolypPVT_BACFR_P2_vanilla352'
+
+Test:
+  Dataset:
+    type: 'PolypDataset'
+    root: '/home/yassine/projects/BPR/dataset/TestDataset'
+    datasets: ['CVC-300', 'CVC-ClinicDB', 'Kvasir', 'CVC-ColonDB', 'ETIS-LaribPolypDB']
+    transform_list:
+      tonumpy: ~
+      normalize:
+        mean: [0.485, 0.456, 0.406]
+        std: [0.229, 0.224, 0.225]
+      totensor: ~
+
+  Dataloader:
+    num_workers: 8
+    pin_memory: True
+
+  Checkpoint:
+    checkpoint_dir: 'checkpoints/PolypPVT_BACFR_P2_vanilla352'
