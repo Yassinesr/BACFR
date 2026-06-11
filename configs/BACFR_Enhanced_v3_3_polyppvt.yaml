@@ -1,7 +1,13 @@
+# BACFR_Enhanced_v3_3 trained on the polyppvt-cropped patch dataset
+# (instead of pranet-traindataset). Same model, same hyperparameters as
+# BACFR_Enhanced_v3_3.yaml -- only the train/eval Dataset.root differs,
+# and checkpoint_dir is renamed so it doesn't clobber the pranet-trained
+# weights.
+
 Model:
-  name: PolypPVT_BACFR
-  channels: 32          # ignored internally (PolypPVT decoder hardwired to 32)
-  output_stride: 16     # ignored
+  name: BACFR_Enhanced_v3_3
+  channels: 256
+  output_stride: 16
   pretrained: true
   use_mccpb: false
   use_dual_heads: true
@@ -36,7 +42,7 @@ Train:
 
   Optimizer:
     type: 'Adam'
-    lr: 1.0e-05         # PVT-v2 stages at 1e-5, decoder at 1e-4 (Train_patch.py uses lr*10 for decoder)
+    lr: 5.0e-06
     weight_decay: 0.0
     clip: 0.5
     mixed_precision: False
@@ -50,7 +56,7 @@ Train:
 
   Checkpoint:
     checkpoint_epoch: 1
-    checkpoint_dir: 'checkpoints/PolypPVT_BACFR'
+    checkpoint_dir: 'checkpoints/BACFR_Enhanced_v3_3_polyppvt'
 
 Eval:
   Dataset:
@@ -70,7 +76,7 @@ Eval:
     pin_memory: True
 
   Checkpoint:
-    checkpoint_dir: 'checkpoints/PolypPVT_BACFR'
+    checkpoint_dir: 'checkpoints/BACFR_Enhanced_v3_3_polyppvt'
 
 Test:
   Dataset:
@@ -89,4 +95,4 @@ Test:
     pin_memory: True
 
   Checkpoint:
-    checkpoint_dir: 'checkpoints/PolypPVT_BACFR'
+    checkpoint_dir: 'checkpoints/BACFR_Enhanced_v3_3_polyppvt'

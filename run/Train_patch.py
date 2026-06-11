@@ -149,9 +149,6 @@ def train(opt, args):
         use_hf_gate=getattr(opt.Model, 'use_hf_gate', False),
         use_flip_consistency=getattr(opt.Model, 'use_flip_consistency', False),
         edge_dist_mode=getattr(opt.Model, 'edge_dist_mode', 'cdist'),
-        hf_gate_stage=getattr(opt.Model, 'hf_gate_stage', 'x4'),
-        aux_lambda_peak=getattr(opt.Model, 'aux_lambda_peak', 0.30),
-        flip_consistency_max=getattr(opt.Model, 'flip_consistency_max', 0.30),
     )
 
     # Pass loss weights from config (kept for backward compatibility)
@@ -174,46 +171,22 @@ def train(opt, args):
     else:
         model = model.cuda()
 
-    # Optimizer setup. Two strategies:
-    #   PVT path  (model name contains 'PolypPVT' or 'pvt'): unified LR, with
-    #     weight-decay excluded from norms / biases. This matches the
-    #     published Polyp-PVT AdamW recipe.
-    #   ResNet path (BACFR / UACANet / PraNet / etc.): legacy split, backbone
-    #     stages at base lr, decoder at 10x. Stem (resnet.conv1/bn1/maxpool)
-    #     stays frozen — original BACFR design.
-    _model_name = getattr(opt.Model, 'name', '')
-    _is_pvt = ('PolypPVT' in _model_name) or ('pvt' in _model_name.lower())
-
-    if _is_pvt:
-        decay_params = []
-        no_decay_params = []
-        for name, param in model.named_parameters():
-            if not param.requires_grad:
-                continue
-            n_lower = name.lower()
-            if param.ndim <= 1 or name.endswith('.bias') or 'norm' in n_lower or 'bn' in n_lower:
-                no_decay_params.append(param)
-            else:
-                decay_params.append(param)
-        params_list = [
-            {'params': decay_params,
-             'weight_decay': opt.Train.Optimizer.weight_decay},
-            {'params': no_decay_params, 'weight_decay': 0.0},
-        ]
-    else:
-        backbone_params = []
-        decoder_params = []
-        _stage_keys = ('layer', 'block', 'patch_embed', 'norm')
-        for name, param in model.named_parameters():
-            if 'resnet' in name or 'backbone' in name:
-                if any(k in name for k in _stage_keys):
-                    backbone_params.append(param)
-            else:
-                decoder_params.append(param)
-        params_list = [
-            {'params': backbone_params},
-            {'params': decoder_params, 'lr': opt.Train.Optimizer.lr * 10},
-        ]
+    # Optimizer setup (original BACFR design):
+    #   Backbone stages (resnet.layer1-4) train at base lr.
+    #   Decoder trains at 10x base lr.
+    #   Stem (resnet.conv1/bn1/maxpool) stays frozen.
+    backbone_params = []
+    decoder_params = []
+    for name, param in model.named_parameters():
+        if 'resnet' in name or 'backbone' in name:
+            if 'layer' in name:
+                backbone_params.append(param)
+        else:
+            decoder_params.append(param)
+    params_list = [
+        {'params': backbone_params},
+        {'params': decoder_params, 'lr': opt.Train.Optimizer.lr * 10},
+    ]
 
     optimizer = eval(opt.Train.Optimizer.type)(
         params_list,
