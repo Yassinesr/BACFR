@@ -15,7 +15,9 @@ def parse_args():
     parser.add_argument('--resume', action='store_true', default=False)
     parser.add_argument('--verbose', action='store_true', default=False)
     parser.add_argument('--debug', action='store_true', default=False)
-    args = parser.parse_args()
+    # Use parse_known_args so callers (e.g. Test_patch_tta.py) can layer
+    # their own arg parsers on top without tripping "unrecognized arguments".
+    args, _ = parser.parse_known_args()
     
     cuda_visible_devices = None
     local_rank = -1
