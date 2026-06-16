@@ -96,14 +96,18 @@ additions over baseline:
   high-frequency gate that amplifies useful boundary residual.
 - **Dual fg/bg heads** with complementary loss `(σ(fg)+σ(bg)-1)²` and
   uncertainty-weighted BCE on the main head.
-- **Flip-consistency training (FCT)** — batch tripled with H-flip/V-flip,
-  MSE between un-flipped predictions. Trains the model to be flip-equivariant.
-- **4-view TTA at inference** — identity + H-flip + V-flip + H+V-flip,
-  sigmoid-averaged.
+- **FCT + TTA** — flip-consistency training paired with 4-view test-time
+  augmentation. These are treated as a single component because neither
+  is meaningful alone: FCT pays a training cost to learn flip-equivariance,
+  TTA exploits flip-equivariance at inference. See **ADDITIONS.md** for
+  the full reasoning.
 
 Together these add +7.4pp Dice over published BPR at the same recipe
 (pranet-traindataset + PraNet test predictions). The recipe switch to
 same-teacher Polyp-PVT adds another +6.4pp on top.
+
+See [**ADDITIONS.md**](./ADDITIONS.md) for the mechanism, intuition, and
+composition story for each addition.
 
 ## Reproduction
 
