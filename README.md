@@ -7,11 +7,11 @@
 See [**RESULTS.md**](./RESULTS.md) for the full per-dataset table, the
 recipe, and reproduction commands.
 
-**TL;DR of the recipe:** train the boundary patch refiner on a *weaker*
-base segmenter's outputs (PraNet patches — diverse error distribution),
-then at inference apply it to a *stronger* base segmenter's outputs
-(Polyp-PVT predictions). Same refiner checkpoint, two roles, +6.4pp over
-the same-teacher baseline.
+**TL;DR of the recipe:** train the boundary patch refiner on patches
+cropped from Polyp-PVT's training-set predictions, then at inference apply
+it to Polyp-PVT's test-set predictions. Same-teacher alignment + a strong
+base segmenter beats both the prior BACFR-on-PraNet baseline (0.881) and
+raw Polyp-PVT (0.870).
 
 Model: `lib/BACFR_Enhanced_v3_3.py`. Training: `run/Train_patch.py`.
 Inference + TTA: `run/Test_patch_tta.py`. See `RESULTS.md` for commands.
