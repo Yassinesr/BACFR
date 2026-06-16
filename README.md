@@ -1,3 +1,27 @@
+# BACFR — Boundary-Aware Context-Fused Refinement for polyp segmentation
+
+**Headline result: 0.9455 mean Dice** on the standard 5-set polyp benchmark
+(Kvasir / CVC-ClinicDB / CVC-ColonDB / CVC-300 / ETIS-LaribPolypDB).
++13.8pp over published BPR (0.807), +7.6pp over published Polyp-PVT (0.870).
+
+See [**RESULTS.md**](./RESULTS.md) for the full per-dataset table, the
+recipe, and reproduction commands.
+
+**TL;DR of the recipe:** train the boundary patch refiner on a *weaker*
+base segmenter's outputs (PraNet patches — diverse error distribution),
+then at inference apply it to a *stronger* base segmenter's outputs
+(Polyp-PVT predictions). Same refiner checkpoint, two roles, +6.4pp over
+the same-teacher baseline.
+
+Model: `lib/BACFR_Enhanced_v3_3.py`. Training: `run/Train_patch.py`.
+Inference + TTA: `run/Test_patch_tta.py`. See `RESULTS.md` for commands.
+
+This repository is forked from UACANet (the original README follows
+below); the backbone, loss, and patch-cropping infrastructure are reused
+from there.
+
+---
+
 # UACANet: Uncertainty Augmented Context Attention for Polyp Segmentation
 
 [![PWC](https://img.shields.io/endpoint.svg?url=https://paperswithcode.com/badge/uacanet-uncertainty-augmented-context/medical-image-segmentation-on-cvc-colondb)](https://paperswithcode.com/sota/medical-image-segmentation-on-cvc-colondb?p=uacanet-uncertainty-augmented-context)

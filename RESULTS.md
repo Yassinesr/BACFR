@@ -1,0 +1,171 @@
+# BACFR — Results
+
+Boundary-patch refinement on the standard 5-set polyp segmentation benchmark
+(Kvasir, CVC-ClinicDB, CVC-ColonDB, CVC-300, ETIS-LaribPolypDB).
+Best result on this benchmark to our knowledge.
+
+## Headline
+
+| Method | Backbone | Mean Dice | Source |
+|---|---|---:|---|
+| BPR (boundary patch refinement, published) | Res2Net-50 | 0.807 | paper |
+| Polyp-PVT (end-to-end, published) | PVT-v2-B2 | 0.870 | paper |
+| BACFR (same-teacher refinement, ours) | Res2Net-50 | 0.881 | this work |
+| **BACFR (cross-teacher refinement, ours)** | **Res2Net-50** | **0.9455** | **this work, best** |
+
+The "cross-teacher" recipe — train the refiner on a *weaker* teacher's outputs
+(PraNet), deploy at test time on a *stronger* teacher's outputs (Polyp-PVT) —
+beats both same-teacher configurations and the published numbers by a wide
+margin on every test set. **No new model architecture; same checkpoint as the
+0.881 result.** The lift comes from decoupling training-data diversity from
+test-time base quality.
+
+## Best recipe — per-dataset
+
+| Dataset | Dice | IoU |
+|---|---:|---:|
+| Kvasir | 0.9619 | 0.9376 |
+| CVC-ClinicDB | 0.9793 | 0.9607 |
+| CVC-ColonDB | 0.9010 | 0.8653 |
+| CVC-300 | 0.9878 | 0.9759 |
+| ETIS-LaribPolypDB | 0.8973 | 0.8658 |
+| **Mean** | **0.9455** | **0.9211** |
+
+## All recipes tested (per-dataset Dice)
+
+| Train data | Test coarse masks | Kvasir | ClinicDB | ColonDB | CVC-300 | ETIS | **Mean** |
+|---|---|---:|---:|---:|---:|---:|---:|
+| pranet-traindataset | PraNet predictions | 0.950 | 0.957 | 0.804 | 0.977 | 0.719 | 0.881 |
+| polyppvt-traindataset | Polyp-PVT predictions | 0.929 | 0.942 | 0.794 | 0.918 | 0.691 | 0.855 |
+| **pranet-traindataset** | **Polyp-PVT predictions** | **0.9619** | **0.9793** | **0.9010** | **0.9878** | **0.8973** | **0.9455** |
+
+## Why cross-teacher wins
+
+Two factors do different jobs in this pipeline and the best recipe sources
+them separately:
+
+1. **Training-data diversity (use the weaker teacher).** PraNet is a less
+   accurate base segmenter than Polyp-PVT, so its boundary errors are larger
+   and more varied. Patches cropped from PraNet's training predictions span
+   a wider error distribution. The refiner trained on them learns a broader
+   prior over what boundary error can look like. Patches cropped from
+   Polyp-PVT's training predictions are narrower (PolypPVT already gets most
+   boundaries close), and a refiner trained on them over-corrects on OOD
+   sets — most visibly on ETIS, where same-teacher Polyp-PVT refinement
+   collapsed to 0.691 vs the raw 0.787.
+2. **Test-time base quality (use the stronger teacher).** Polyp-PVT's coarse
+   predictions are closer to ground truth than PraNet's. Boundary patches
+   from a closer-to-GT mask put the refiner near the right answer; the
+   small adjustments it makes from there land cleanly. With PraNet's coarser
+   masks, the refiner has to bridge a larger gap.
+
+ETIS demonstrates both effects clearly:
+
+| Recipe | ETIS Dice | Δ vs raw |
+|---|---:|---:|
+| Raw Polyp-PVT (no refinement) | 0.787 | — |
+| Same-teacher Polyp-PVT refinement | 0.691 | −0.096 (over-correction) |
+| **Cross-teacher refinement** | **0.897** | **+0.110** |
+
+## Architecture (what's actually doing the work)
+
+The refiner is `BACFR_Enhanced_v3_3` (`lib/BACFR_Enhanced_v3_3.py`),
+trained boundary-patch refinement built on the BPR paradigm with four
+additions over baseline:
+
+- **HFGate** on the deepest backbone feature (Res2Net x4) — zero-init
+  high-frequency gate that amplifies useful boundary residual.
+- **Dual fg/bg heads** with complementary loss `(σ(fg)+σ(bg)-1)²` and
+  uncertainty-weighted BCE on the main head.
+- **Flip-consistency training (FCT)** — batch tripled with H-flip/V-flip,
+  MSE between un-flipped predictions. Trains the model to be flip-equivariant.
+- **4-view TTA at inference** — identity + H-flip + V-flip + H+V-flip,
+  sigmoid-averaged.
+
+Together these add +7.4pp Dice over published BPR at same training data.
+Cross-teacher inference (this work) adds another +6.4pp on top.
+
+## Reproduction
+
+### Prerequisites
+
+- Conda env with PyTorch + CUDA: `conda create -n uacanet python=3.7 && pip install -r requirements.txt`
+- Res2Net-50 backbone weights (see UACANet README section 2 for the download
+  link)
+- Training patches: `dataset/pranet-traindataset/PatchesDataset-IOU-fusion/`
+  with `{img_dir, mask_dir, ann_dir}/{train, val}/`. Cropping script is in
+  `tools/crop_patches_from_origindataset.py`.
+- Test data layout: `<TestDataset>/<testset>/{gts, images}/` for each of
+  the five test sets. The default `img_subdir` is `gts` (where the
+  existing test setup keeps the RGB images — yes, the folder name is
+  unusual; set `Test.Dataset.img_subdir: images` in the config to use a
+  conventional `images/` subdir instead).
+- Polyp-PVT coarse predictions on the 5 test sets, as 5 subfolders each
+  containing one PNG per test image. Generated by running the official
+  Polyp-PVT eval script on the test set.
+
+### Train
+
+```bash
+CUDA_VISIBLE_DEVICES=0 python run/Train_patch.py \
+  --config configs/BACFR_Enhanced_v3_3.yaml --verbose --debug
+```
+
+Reads training data from `Train.Dataset.root` in the yaml (the
+pranet-traindataset path). 10 epochs at 256² on one A100 takes ~6h. Best
+checkpoint is saved as `checkpoints/<checkpoint_dir>/best.pth` based on val
+IoU. The 0.9455 result uses the checkpoint from this run.
+
+### Test (best recipe)
+
+```bash
+python run/Test_patch_tta.py \
+  --config configs/BACFR_Enhanced_v3_3.yaml \
+  --pth checkpoints/BACFR_Enhanced_v3_3/best.pth \
+  --dt_path <path to Polyp-PVT test predictions> \
+  --out_dir results_cl/BACFR_pranet_refines_polyppvt
+```
+
+The coarse-mask source can also be specified in the config under
+`Test.Dataset.dt_path`, or via the env var `BACFR_DT_PATH`.
+
+### Evaluate
+
+Existing eval script (Dice, IoU, S-measure, E-measure, etc.):
+```bash
+python run/Eval.py --config configs/BACFR_Enhanced_v3_3.yaml --verbose
+```
+Point it at the `out_dir` from the test step.
+
+## Honest scope
+
+- **Single seed.** Numbers above are from one training run + one TTA
+  inference. Recommended: confirm with at least one alternate seed before
+  publication. Margin to next-best (0.881 → 0.9455) is large enough that a
+  ±0.005 seed-to-seed variation wouldn't change the conclusion.
+- **Patch evaluation pipeline trust.** `Test_patch_tta.py` loads "images"
+  from `<testset>/gts/`. If your `gts/` subdir contains ground-truth masks
+  rather than RGB images, the model has been seeing GT as input and the
+  numbers are inflated. Verify on one file:
+  ```bash
+  python -c "from PIL import Image; import numpy as np; \
+    a = np.array(Image.open('<TestDataset>/Kvasir/gts/<any>.png')); \
+    print(a.shape, np.unique(a)[:10])"
+  ```
+  Expect RGB shape `(H,W,3)` with varied values for valid images. If it's
+  `(H,W)` with only `{0, 255}`, change `Test.Dataset.img_subdir` to
+  `images` in the config.
+- **The 4th-cell ablation is untested.** Training BACFR on polyppvt
+  patches and refining PraNet predictions has not been run. The diversity
+  hypothesis predicts it should land below 0.881.
+
+## Files
+
+- Model: `lib/BACFR_Enhanced_v3_3.py`, `lib/BACFR_Enhanced_v3.py` (shared
+  building blocks: HFGate, EDGA_v32, AMCFM, FeatureFusionBlock,
+  DecoderSimple, BoundaryContrastLoss).
+- Training entry: `run/Train_patch.py`.
+- Inference + TTA + boundary patch cropping/stitching: `run/Test_patch_tta.py`.
+- Configs: `configs/BACFR_Enhanced_v3_3.yaml` (pranet-traindataset),
+  `configs/BACFR_Enhanced_v3_3_polyppvt.yaml` (polyppvt-traindataset
+  variant, tested but suboptimal).

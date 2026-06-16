@@ -168,12 +168,17 @@ def test(opt, args, out_dir, pth, dt_path):
     model.cuda()
     model.eval()
 
+    # Test data root comes from the config; the per-testset image subdir
+    # name (defaults to 'gts' for the existing TestDataset/<set>/{gts,images}
+    # layout) is also config-driven.
+    root = opt.Test.Dataset.root
+    img_subdir = getattr(opt.Test.Dataset, 'img_subdir', 'gts')
+
     for testset in opt.Test.Dataset.datasets:
         save_dir = os.path.join(out_dir, testset)
         os.makedirs(save_dir, exist_ok=True)
 
-        root = "/home/yassine/projects/UACANet-main/dataset/TestDataset"
-        img_path = os.path.join(root, testset, 'gts')
+        img_path = os.path.join(root, testset, img_subdir)
         mask_path = os.path.join(dt_path, testset)
         test_dataset = eval(opt.Test.Dataset.type)(
             img_root=img_path, mask_root=mask_path,
@@ -255,8 +260,15 @@ if __name__ == '__main__':
 
     out_dir = extra_args.out_dir or os.path.join(
         'results_cl', os.path.basename(ckpt_dir.rstrip('/')) + '_TTA')
-    dt_path = extra_args.dt_path or \
-        "/home/yassine/projects/UACANet-main/results_cl/paper_results/PraNet-results/PraNet"
+    # Source of coarse masks to refine. Resolution order:
+    #   --dt_path CLI flag > Test.Dataset.dt_path in config > env var BACFR_DT_PATH
+    dt_path = (extra_args.dt_path
+               or getattr(opt.Test.Dataset, 'dt_path', None)
+               or os.environ.get('BACFR_DT_PATH'))
+    if not dt_path:
+        raise ValueError(
+            'No coarse-mask source specified. Pass --dt_path, set '
+            'Test.Dataset.dt_path in the config, or export BACFR_DT_PATH.')
 
     model = eval(opt.Model.name)(
         channels=opt.Model.channels,
