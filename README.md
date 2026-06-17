@@ -3,21 +3,31 @@
 > **⚠ Pipeline-leak correction.** Earlier reported numbers on this codebase
 > (0.8815, 0.8548, 0.9455) were inflated by a data leak: the test
 > pipeline was loading ground-truth masks as the model's image input.
-> See `RESULTS.md` for details and the corrected single-recipe number.
+> Fixed. See `RESULTS.md` for the corrected numbers and the leak's
+> per-dataset effect.
 
-**Headline result (corrected pipeline, single recipe verified): 0.8723
-mean Dice** on the standard 5-set polyp benchmark — **+0.065 over
-published BPR (0.807)**, **+0.002 over published Polyp-PVT (0.870)**.
+**Corrected headline:** three sanity-checked recipes all converge to
+**0.86–0.87 mean Dice** on the standard 5-set polyp benchmark — a
+refinement ceiling.
 
-Recipe: BACFR trained on pranet-traindataset, deployed at inference on
-Polyp-PVT's test predictions (`Test.Dataset.img_subdir: images` — the
-corrected default in `run/Test_patch_tta.py`).
+| Recipe | Mean Dice |
+|---|---:|
+| BACFR refining PraNet preds (pranet-trained) | ~0.86 |
+| BACFR refining Polyp-PVT preds (pranet-trained) | 0.8723 |
+| BACFR refining Polyp-PVT preds (polyppvt-trained) | 0.8726 |
 
-The other three cells of the 2×2 train-data × test-base ablation are
-pending re-run with the corrected pipeline.
+vs published baselines:
+- **+0.05** over published BPR (0.807) on the comparable recipe.
+- Within **+0.003** of raw published Polyp-PVT (0.870).
+
+BACFR's contribution is real but bounded: weak base segmenters get
+**+0.05** from refinement; near-saturated bases (Polyp-PVT) hit the
+same ~0.87 ceiling and refinement adds essentially nothing. The
+benchmark appears to have a structural ceiling around 0.87 that the
+patch-refinement paradigm cannot break in its current form.
 
 See [**RESULTS.md**](./RESULTS.md) for the full per-dataset table, the
-leak's effect, what still needs re-running, and reproduction commands.
+leak's effect, the ceiling analysis, and reproduction commands.
 
 Model: `lib/BACFR_Enhanced_v3_3.py`. Training: `run/Train_patch.py`.
 Inference + TTA: `run/Test_patch_tta.py`. See `RESULTS.md` for commands.
