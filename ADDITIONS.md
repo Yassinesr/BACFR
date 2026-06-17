@@ -1,5 +1,14 @@
 # BACFR's Four Additions — what, why, and why they compose
 
+> **⚠ Note on the +7.4pp number below.** The "+7.4pp over published BPR
+> at same recipe" figure was computed against a pre-correction internal
+> result (0.8815) that included GT leakage. The published BPR baseline
+> (0.807) is unaffected. The corrected stack-vs-baseline contribution
+> needs the original BACFR ablations re-run with `img_subdir: images`
+> before it can be quoted precisely. The overall ordering and
+> qualitative reasoning below remain sound; the exact magnitudes per
+> addition may shift. See `RESULTS.md`.
+
 The base patch refinement architecture (BPR) scores **0.807** mean Dice on
 the standard 5-set polyp benchmark. BACFR adds four components on top of
 that base and reaches **0.881** at the same recipe (pranet-traindataset +

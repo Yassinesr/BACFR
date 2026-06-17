@@ -169,10 +169,13 @@ def test(opt, args, out_dir, pth, dt_path):
     model.eval()
 
     # Test data root comes from the config; the per-testset image subdir
-    # name (defaults to 'gts' for the existing TestDataset/<set>/{gts,images}
-    # layout) is also config-driven.
+    # name defaults to 'images' (the standard TestDataset layout has both
+    # 'images' = RGB inputs and 'gts' = ground-truth masks). Earlier
+    # versions of this script hardcoded 'gts', which silently leaked GT
+    # into the model input and inflated all reported numbers. Override
+    # via Test.Dataset.img_subdir if your layout differs.
     root = opt.Test.Dataset.root
-    img_subdir = getattr(opt.Test.Dataset, 'img_subdir', 'gts')
+    img_subdir = getattr(opt.Test.Dataset, 'img_subdir', 'images')
 
     for testset in opt.Test.Dataset.datasets:
         save_dir = os.path.join(out_dir, testset)

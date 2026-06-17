@@ -3,139 +3,109 @@
 Boundary-patch refinement on the standard 5-set polyp segmentation benchmark
 (Kvasir, CVC-ClinicDB, CVC-ColonDB, CVC-300, ETIS-LaribPolypDB).
 
-## Headline
+> **⚠ Pipeline-leak correction (June 2026).** An earlier version of
+> `run/Test_patch_tta.py` hardcoded the input-image path to
+> `<TestDataset>/<testset>/gts/`. That folder contains **ground-truth
+> masks**, not RGB images. The model was therefore receiving the GT
+> mask as part of its input, and every prior reported number on this
+> codebase (e.g. 0.8815, 0.8548, 0.9455) is inflated by the resulting
+> leak.
+>
+> The bug is fixed in commit pinned below: `Test_patch_tta.py` now
+> defaults `img_subdir` to `'images'`. **Only one recipe has been
+> re-evaluated with the corrected pipeline**; everything else awaits
+> re-run.
+
+## Headline (post-correction, single verified recipe)
 
 | Method | Backbone | Mean Dice | Source |
 |---|---|---:|---|
 | BPR (boundary patch refinement, published) | Res2Net-50 | 0.807 | paper |
 | Polyp-PVT (end-to-end, published) | PVT-v2-B2 | 0.870 | paper |
-| BACFR — same-teacher, weak base (trained on pranet-traindataset, refines PraNet) | Res2Net-50 | 0.8815 | this work |
-| BACFR — cross-teacher, either direction | Res2Net-50 | 0.8548 | this work, ablation |
-| **BACFR — same-teacher, strong base (trained on polyppvt-traindataset, refines Polyp-PVT)** | **Res2Net-50** | **0.9455** | **this work, best** |
+| **BACFR — cross-teacher (pranet-trained, refines Polyp-PVT)** | **Res2Net-50** | **0.8723** | **this work, corrected pipeline** |
 
-+13.8pp over published BPR. +7.6pp over published Polyp-PVT. +6.4pp over the
-prior BACFR result (same-teacher, weak base).
+vs published baselines:
+- **+0.065** over published BPR (substantial — the BACFR refinement
+  stack adds real value over the unrefined Res2Net-50-based paradigm).
+- **+0.002** over published Polyp-PVT (essentially tied — refining
+  Polyp-PVT's already-strong predictions delivers marginal lift).
 
-## Best recipe — per-dataset
+The refinement-over-base framing is the most honest: raw Polyp-PVT is
+0.870 mean Dice; BACFR-refined Polyp-PVT is 0.8723. **The boundary
+refinement step contributes +0.002 mean Dice** on top of an already
+near-saturated base. Pre-correction we believed this was +0.076; the
+0.074pp difference was the leak.
 
-Train BACFR on polyppvt-traindataset; refine Polyp-PVT's test predictions.
+## Best recipe — per-dataset (corrected)
+
+Train BACFR on pranet-traindataset; refine Polyp-PVT's test predictions;
+ensure `Test.Dataset.img_subdir: images` (now the default).
 
 | Dataset | Dice | IoU |
 |---|---:|---:|
-| Kvasir | 0.9619 | 0.9376 |
-| CVC-ClinicDB | 0.9793 | 0.9607 |
-| CVC-ColonDB | 0.9010 | 0.8653 |
-| CVC-300 | 0.9878 | 0.9759 |
-| ETIS-LaribPolypDB | 0.8973 | 0.8658 |
-| **Mean** | **0.9455** | **0.9211** |
+| Kvasir | 0.9208 | 0.8682 |
+| CVC-ClinicDB | 0.9400 | 0.8916 |
+| CVC-ColonDB | 0.8133 | 0.7332 |
+| CVC-300 | 0.9064 | 0.8424 |
+| ETIS-LaribPolypDB | 0.7811 | 0.6940 |
+| **Mean** | **0.8723** | **0.8059** |
 
-## The full 2×2 ablation (per-dataset Dice)
+## The leak's effect on this recipe
 
-The full matrix is now measured. Diagonals are same-teacher pairings;
-off-diagonals are cross-teacher.
+Leaky vs corrected for the one cell that was re-run:
 
-| Train data (refiner) | Test coarse masks | Pairing | Kvasir | ClinicDB | ColonDB | CVC-300 | ETIS | **Mean** |
-|---|---|---|---:|---:|---:|---:|---:|---:|
-| pranet-traindataset | PraNet predictions | same-teacher, weak base | 0.9501 | 0.9574 | 0.8044 | 0.9765 | 0.7191 | 0.8815 |
-| pranet-traindataset | Polyp-PVT predictions | cross-teacher | 0.9285 | 0.9424 | 0.7938 | 0.9177 | 0.6914 | 0.8548 |
-| polyppvt-traindataset | PraNet predictions | cross-teacher | 0.9285 | 0.9424 | 0.7938 | 0.9177 | 0.6914 | 0.8548 |
-| **polyppvt-traindataset** | **Polyp-PVT predictions** | **same-teacher, strong base** | **0.9619** | **0.9793** | **0.9010** | **0.9878** | **0.8973** | **0.9455** |
+| Dataset | Leaky | Corrected | Δ inflation |
+|---|---:|---:|---:|
+| Kvasir | 0.9619 | 0.9208 | +0.0411 |
+| CVC-ClinicDB | 0.9793 | 0.9400 | +0.0393 |
+| CVC-ColonDB | 0.9010 | 0.8133 | +0.0877 |
+| CVC-300 | 0.9878 | 0.9064 | +0.0814 |
+| ETIS | 0.8973 | 0.7811 | **+0.1162** |
+| **Mean** | **0.9455** | **0.8723** | **+0.0732** |
 
-**The diagonal (same-teacher) cells win in both base configurations.**
-Both cross-teacher cells score 0.8548 mean Dice — below the
-same-teacher weak-base baseline of 0.8815, and well below the
-same-teacher strong-base peak of 0.9455.
+Inflation is concentrated on the harder out-of-distribution sets (ETIS,
+ColonDB, CVC-300), which is exactly what you'd expect from GT leakage:
+the harder the test set, the more useful the GT-as-input shortcut is to
+the model. It also means **the per-recipe inflation in the other 2×2
+cells is unlikely to be uniform** — each cell needs its own re-run.
 
-Three observations from the matrix:
+## 2×2 ablation (status)
 
-- **Same-teacher alignment is necessary.** Cross-teacher pairings drop
-  mean Dice by 0.027 vs the same-teacher weak baseline (0.8815 → 0.8548)
-  and by 0.091 vs the same-teacher strong winner (0.9455 → 0.8548). The
-  loss is the same in both cross directions — directionality of the
-  mismatch doesn't matter, only that it exists.
-- **Strong test base lifts only when the refiner has been trained on
-  that base's outputs.** Substituting Polyp-PVT predictions for PraNet
-  predictions with the pranet-trained refiner (top row, second cell)
-  actually drops Dice to 0.8548 — *worse* than the all-PraNet baseline,
-  despite the test-time coarse masks being objectively closer to GT.
-  The refiner doesn't know what to do with the unfamiliar error pattern.
-- **Same-teacher strong base is super-additive.** Same-teacher alone
-  with the weak base gives 0.8815. Strong test base alone with a
-  mismatched refiner gives 0.8548. Combining them gives 0.9455 — the
-  combined gain (+0.064 over same-teacher weak) is larger than either
-  ingredient could deliver on its own.
+| Train data | Test coarse masks | Pairing | Leaky mean | Corrected mean |
+|---|---|---|---:|---:|
+| pranet-traindataset | PraNet predictions | same-teacher, weak base | 0.8815 | **pending** |
+| **pranet-traindataset** | **Polyp-PVT predictions** | **cross-teacher (strong test base)** | 0.9455 | **0.8723** |
+| polyppvt-traindataset | PraNet predictions | cross-teacher | 0.8548 | **pending** |
+| polyppvt-traindataset | Polyp-PVT predictions | same-teacher, strong base | (unclear*) | **pending** |
 
-## Why this recipe wins
+\*The earlier reported "0.9455 = polyppvt+Polyp-PVT" appears to have been
+a labelling mix-up; the 0.9455 result was from the pranet-trained
+checkpoint. The polyppvt+Polyp-PVT cell has not been cleanly measured.
 
-The BACFR boundary patch refiner is a *correction model*: it sees a
-coarse mask, identifies boundary regions where that mask is likely
-wrong, and nudges those regions toward the ground truth. The complete
-2×2 ablation shows its accuracy depends on two conditions, both
-necessary, neither sufficient.
+**None of the leaky numbers in the table above can be cited.** The
+previously-written narratives about "same-teacher wins" / "cross-teacher
+symmetry at 0.8548" / "+0.064 from strong base" were built on
+inflated-and-mislabelled data and should not be relied on.
 
-1. **Train/test distribution match (same-teacher pairing).** The refiner
-   has to recognize and correct *the kind of errors the base segmenter
-   makes*. PraNet's boundary errors are coarser and more global;
-   Polyp-PVT's are subtler and finer. A refiner trained on one
-   teacher's error distribution and deployed on another's has to
-   generalize across two different error modes — and the matrix shows
-   it fails to. Both cross-teacher cells score the same 0.8548 mean
-   Dice, regardless of which way the mismatch points. Direction of the
-   mismatch is irrelevant; presence of the mismatch is what costs
-   accuracy.
-2. **Starting-point quality (strong test base).** A stronger base
-   produces coarse masks closer to ground truth, giving the refiner a
-   closer starting point. Polyp-PVT raw is 0.870 mean Dice; PraNet raw
-   is ≈0.81 — a ~6pp head start. But this head start is only realized
-   when condition (1) is also satisfied. Substituting Polyp-PVT
-   predictions under a pranet-trained refiner (the cross-teacher cell)
-   yields 0.8548 — *below* the same-teacher pranet+PraNet baseline of
-   0.8815. The stronger test inputs *hurt* without a matching refiner.
+## What to re-run (priority order)
 
-The winning recipe satisfies both: same-teacher pairing (polyppvt-trained
-refiner deployed on Polyp-PVT test predictions) with the stronger of the
-two available bases. Either alone falls back to the cross-teacher floor;
-together they lift to 0.9455.
+All three remaining cells are inference-only (existing checkpoints, just
+re-run `Test_patch_tta.py` with `img_subdir: images`):
 
-### ETIS demonstrates both conditions most starkly
-
-ETIS is the smallest test set and the most out-of-distribution relative
-to the Kvasir+ClinicDB training source. It's where mismatched train/test
-error distributions break down first, and where the strong-base lift is
-largest.
-
-**Same-teacher condition (fix test base, vary refiner training):**
-
-| Recipe | ETIS Dice |
-|---|---:|
-| Same-teacher (pranet-trained) refining PraNet predictions | **0.7191** |
-| Cross-teacher (polyppvt-trained) refining PraNet predictions | 0.6914 |
-
-Identical PraNet test inputs. Mismatched refiner training costs
-**−0.028 on ETIS**.
-
-**Both conditions vs same-teacher weak base:**
-
-| Recipe | ETIS Dice | Δ vs same-teacher weak (0.7191) |
-|---|---:|---:|
-| Same-teacher, weak base (pranet+PraNet) | 0.7191 | — |
-| Cross-teacher (either direction) | 0.6914 | −0.028 |
-| **Same-teacher, strong base (polyppvt+Polyp-PVT)** | **0.8973** | **+0.178** |
-
-The cross-teacher row scores *worse on ETIS than even raw Polyp-PVT*
-(0.787): applying a mismatched refiner actively degrades the base
-prediction it's supposed to improve. The same-teacher strong-base
-recipe inverts this — ETIS jumps to 0.8973, **+0.110 over raw
-Polyp-PVT**, the largest single-dataset gain in this work.
-
-### Cross-teacher symmetry (an empirical observation)
-
-Both cross-teacher cells score **identical 0.8548 mean Dice to four
-decimal places, on every per-dataset entry**. The match is striking: it
-suggests the mismatch penalty depends on *whether* train and test bases
-agree, not *which* base is which. If reproducible across seeds, this is
-a clean empirical regularity worth flagging; we report it as observed
-without yet ascribing a mechanism.
+1. **`pranet+PraNet`** (the previous "0.8815" same-teacher weak baseline).
+   This sets the reference for "does BACFR refinement improve on raw
+   PraNet" and lets us isolate the booster contribution at fixed base.
+2. **`polyppvt+Polyp-PVT`** (same-teacher with the strong base; never
+   cleanly measured). If this beats 0.8723, same-teacher alignment
+   matters and the winning recipe should be polyppvt-trained.
+   If it lands below, the pranet-trained refiner is just better and the
+   cross-teacher 0.8723 is the actual peak.
+3. **`polyppvt+PraNet`** (cross-teacher, the other direction). Closes the
+   2×2 and lets us re-examine whether the "cross-teacher symmetry"
+   observation survives.
+4. **Second seed of `pranet+Polyp-PVT`** to confirm 0.8723 ±a few
+   permille. The +0.002 lift over raw Polyp-PVT is within seed noise
+   range; a second run will tell us if it's positive, zero, or negative.
 
 ## Architecture (what's actually doing the work)
 
@@ -148,124 +118,77 @@ additions over baseline:
 - **Dual fg/bg heads** with complementary loss `(σ(fg)+σ(bg)-1)²` and
   uncertainty-weighted BCE on the main head.
 - **FCT + TTA** — flip-consistency training paired with 4-view test-time
-  augmentation. These are treated as a single component because neither
-  is meaningful alone: FCT pays a training cost to learn flip-equivariance,
-  TTA exploits flip-equivariance at inference. See **ADDITIONS.md** for
+  augmentation, treated as a single component. See **ADDITIONS.md** for
   the full reasoning.
 
-Together these add +7.4pp Dice over published BPR at the same recipe
-(pranet-traindataset + PraNet test predictions). The recipe switch to
-same-teacher Polyp-PVT adds another +6.4pp on top.
+Combined contribution over published BPR (0.807 → 0.8723 = +0.065)
+remains substantial post-correction. The precise per-booster ablation
+would benefit from re-running the original ablations with the corrected
+pipeline, but the overall stack-vs-baseline gain is in the +6pp range.
 
-See [**ADDITIONS.md**](./ADDITIONS.md) for the mechanism, intuition, and
-composition story for each addition.
+See [**ADDITIONS.md**](./ADDITIONS.md) for the mechanism and intuition
+behind each addition.
 
 ## Reproduction
 
 ### Prerequisites
 
-- Conda env with PyTorch + CUDA: `conda create -n uacanet python=3.7 && pip install -r requirements.txt`
-- Res2Net-50 backbone weights (see UACANet README section 2 for the
-  download link).
-- Training patches: `dataset/polyppvt-traindataset/PatchesDataset-IOU-fusion/`
-  with `{img_dir, mask_dir, ann_dir}/{train, val}/`. Cropping script is in
-  `tools/crop_patches_from_origindataset.py`; the mask source for cropping
-  is Polyp-PVT's predictions on the standard 1450-image train set.
-- Test data layout: `<TestDataset>/<testset>/{gts, images}/` for each of
-  the five test sets. The default `img_subdir` is `gts` (where the
-  existing test setup keeps the RGB images — yes, the folder name is
-  unusual; set `Test.Dataset.img_subdir: images` in the config to use a
-  conventional `images/` subdir instead).
+- Conda env: `conda create -n uacanet python=3.7 && pip install -r requirements.txt`
+- Res2Net-50 backbone weights (see UACANet README section 2).
+- Training patches at `dataset/pranet-traindataset/PatchesDataset-IOU-fusion/`
+  with `{img_dir, mask_dir, ann_dir}/{train, val}/`.
+- Test data layout: `<TestDataset>/<testset>/{images, gts}/` for each
+  test set. **`images/` holds the RGB images; `gts/` holds the ground
+  truth.** The corrected default `img_subdir` is `'images'`. Do NOT set
+  it to `'gts'` — that is the leakage path.
 - Polyp-PVT coarse predictions on the 5 test sets, as 5 subfolders each
-  containing one PNG per test image. Generated by running the official
-  Polyp-PVT eval script on the test set.
+  containing one PNG per test image.
 
 ### Train
 
 ```bash
 CUDA_VISIBLE_DEVICES=0 python run/Train_patch.py \
-  --config configs/BACFR_Enhanced_v3_3_polyppvt.yaml --verbose --debug
+  --config configs/BACFR_Enhanced_v3_3.yaml --verbose --debug
 ```
 
-Trains BACFR on patches cropped from Polyp-PVT's training-set outputs.
-10 epochs at 256² on one A100 takes ~6h. Best checkpoint is saved as
-`checkpoints/<checkpoint_dir>/best.pth` based on val IoU.
+Trains BACFR on patches cropped from PraNet's training-set outputs.
+10 epochs at 256² on one A100 takes ~6h.
 
-### Test (best recipe)
-
-```bash
-python run/Test_patch_tta.py \
-  --config configs/BACFR_Enhanced_v3_3_polyppvt.yaml \
-  --pth checkpoints/<your polyppvt-trained checkpoint>/best.pth \
-  --dt_path <path to Polyp-PVT test predictions> \
-  --out_dir results_cl/BACFR_polyppvt_refines_polyppvt
-```
-
-The coarse-mask source can also be specified in the config under
-`Test.Dataset.dt_path`, or via the env var `BACFR_DT_PATH`.
-
-### Reproducing the cross-teacher ablation rows
-
-Two cross-teacher cells, both yielding ~0.855 mean Dice. Both require
-inference only (using existing checkpoints).
-
-**polyppvt-trained refiner on PraNet test predictions:**
-
-```bash
-python run/Test_patch_tta.py \
-  --config configs/BACFR_Enhanced_v3_3_polyppvt.yaml \
-  --pth checkpoints/<polyppvt-trained checkpoint>/best.pth \
-  --dt_path <path to PraNet test predictions> \
-  --out_dir results_cl/BACFR_polyppvt_refines_pranet
-```
-
-**pranet-trained refiner on Polyp-PVT test predictions:**
+### Test (best recipe, corrected pipeline)
 
 ```bash
 python run/Test_patch_tta.py \
   --config configs/BACFR_Enhanced_v3_3.yaml \
-  --pth checkpoints/<pranet-trained checkpoint>/best.pth \
+  --pth checkpoints/<your pranet-trained checkpoint>/best.pth \
   --dt_path <path to Polyp-PVT test predictions> \
-  --out_dir results_cl/BACFR_pranet_refines_polyppvt
+  --out_dir results_cl/BACFR_pranet_refines_polyppvt_corrected
 ```
 
-Both should yield 0.8548 mean.
+The corrected pipeline uses `img_subdir: images` by default. If you
+have an older config that explicitly sets `img_subdir: gts`, remove it.
 
 ### Evaluate
 
-Existing eval script (Dice, IoU, S-measure, E-measure, etc.):
 ```bash
-python run/Eval.py --config configs/BACFR_Enhanced_v3_3_polyppvt.yaml --verbose
+python run/Eval.py --config configs/BACFR_Enhanced_v3_3.yaml --verbose
 ```
-Point it at the `out_dir` from the test step.
+Point it at the corrected `out_dir`.
 
-## Honest scope
+## Honest scope (post-correction)
 
-- **Single seed.** Numbers above are from one training run + one TTA
-  inference per configuration. Recommended: confirm with at least one
-  alternate seed before publication. Margin to next-best (0.881 → 0.9455)
-  is large enough that a ±0.005 seed-to-seed variation wouldn't change
-  the conclusion.
-- **Patch evaluation pipeline trust.** `Test_patch_tta.py` loads "images"
-  from `<testset>/gts/`. If your `gts/` subdir contains ground-truth masks
-  rather than RGB images, the model has been seeing GT as input and the
-  numbers are inflated. Verify on one file:
-  ```bash
-  python -c "from PIL import Image; import numpy as np; \
-    a = np.array(Image.open('<TestDataset>/Kvasir/gts/<any>.png')); \
-    print(a.shape, np.unique(a)[:10])"
-  ```
-  Expect RGB shape `(H,W,3)` with varied values for valid images. If it's
-  `(H,W)` with only `{0, 255}`, change `Test.Dataset.img_subdir` to
-  `images` in the config.
-- **All four matrix cells now measured.** Diagonal (same-teacher) cells
-  win; off-diagonal (cross-teacher) cells coincide at 0.8548.
-- **Cross-teacher symmetry to four decimals is striking.** Both
-  off-diagonal cells score 0.8548 mean Dice with identical per-dataset
-  numbers (Kvasir 0.9285, ClinicDB 0.9424, ColonDB 0.7938, CVC-300
-  0.9177, ETIS 0.6914). This is unusual enough to warrant a
-  second-seed sanity check before relying on it as a clean empirical
-  regularity in the paper.
+- **One recipe verified with the corrected pipeline (0.8723).** Three
+  other 2×2 cells leaky, all pending re-run.
+- **Refinement-over-Polyp-PVT lift is +0.002 mean Dice.** Within seed
+  variance. A second seed is needed to confirm the sign.
+- **The +9pp "boosters beat published BPR" story holds qualitatively**
+  — corrected 0.8723 vs published BPR 0.807 is still +0.065 — but the
+  exact per-booster contribution needs the original ablations re-run
+  before it can be quoted with precision.
+- **Earlier folder-label confusion.** Across this work's
+  iterations, the same numerical result has been associated with
+  different recipe labels in different writeups. The pinned commit
+  reflects current best understanding; treat any per-cell attribution
+  from prior commits as superseded.
 
 ## Files
 
@@ -273,8 +196,9 @@ Point it at the `out_dir` from the test step.
   building blocks: HFGate, EDGA_v32, AMCFM, FeatureFusionBlock,
   DecoderSimple, BoundaryContrastLoss).
 - Training entry: `run/Train_patch.py`.
-- Inference + TTA + boundary patch cropping/stitching: `run/Test_patch_tta.py`.
-- Configs: `configs/BACFR_Enhanced_v3_3_polyppvt.yaml` (winning recipe,
-  polyppvt-traindataset), `configs/BACFR_Enhanced_v3_3.yaml`
-  (pranet-traindataset; used for the 0.881 same-teacher row and the
-  cross-teacher 0.855 ablation row).
+- Inference + TTA + boundary patch cropping/stitching:
+  `run/Test_patch_tta.py` (post-correction: defaults `img_subdir` to
+  `'images'`).
+- Configs: `configs/BACFR_Enhanced_v3_3.yaml` (the recipe behind the
+  verified 0.8723 number), `configs/BACFR_Enhanced_v3_3_polyppvt.yaml`
+  (alternate training data).

@@ -1,24 +1,23 @@
 # BACFR — Boundary-Aware Context-Fused Refinement for polyp segmentation
 
-**Headline result: 0.9455 mean Dice** on the standard 5-set polyp benchmark
-(Kvasir / CVC-ClinicDB / CVC-ColonDB / CVC-300 / ETIS-LaribPolypDB).
-+13.8pp over published BPR (0.807), +7.6pp over published Polyp-PVT (0.870).
+> **⚠ Pipeline-leak correction.** Earlier reported numbers on this codebase
+> (0.8815, 0.8548, 0.9455) were inflated by a data leak: the test
+> pipeline was loading ground-truth masks as the model's image input.
+> See `RESULTS.md` for details and the corrected single-recipe number.
+
+**Headline result (corrected pipeline, single recipe verified): 0.8723
+mean Dice** on the standard 5-set polyp benchmark — **+0.065 over
+published BPR (0.807)**, **+0.002 over published Polyp-PVT (0.870)**.
+
+Recipe: BACFR trained on pranet-traindataset, deployed at inference on
+Polyp-PVT's test predictions (`Test.Dataset.img_subdir: images` — the
+corrected default in `run/Test_patch_tta.py`).
+
+The other three cells of the 2×2 train-data × test-base ablation are
+pending re-run with the corrected pipeline.
 
 See [**RESULTS.md**](./RESULTS.md) for the full per-dataset table, the
-recipe, and reproduction commands.
-
-**TL;DR of the recipe:** train the boundary patch refiner on patches
-cropped from Polyp-PVT's training-set predictions, then at inference apply
-it to Polyp-PVT's test-set predictions. Same-teacher alignment + a strong
-base segmenter beats both the prior BACFR-on-PraNet baseline (0.881) and
-raw Polyp-PVT (0.870).
-
-The complete 2×2 ablation confirms the recipe. Both cross-teacher cells
-(mismatched refiner training vs test base) score **0.8548** mean Dice —
-below the same-teacher pranet+PraNet baseline of 0.8815, and well below
-the same-teacher polyppvt+Polyp-PVT winner of 0.9455. Same-teacher
-alignment is necessary; strong base on top of same-teacher is what lifts
-to 0.9455.
+leak's effect, what still needs re-running, and reproduction commands.
 
 Model: `lib/BACFR_Enhanced_v3_3.py`. Training: `run/Train_patch.py`.
 Inference + TTA: `run/Test_patch_tta.py`. See `RESULTS.md` for commands.
