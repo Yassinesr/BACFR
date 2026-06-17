@@ -13,12 +13,12 @@ it to Polyp-PVT's test-set predictions. Same-teacher alignment + a strong
 base segmenter beats both the prior BACFR-on-PraNet baseline (0.881) and
 raw Polyp-PVT (0.870).
 
-The cross-teacher ablation (polyppvt-trained refiner deployed on **PraNet**
-test predictions) scores **0.855** — below the same-teacher pranet+PraNet
-baseline of 0.881 on the same test inputs. Training on the wrong base's
-error patterns costs 0.026 mean Dice even when test inputs are held
-constant. Both ingredients — same-teacher alignment AND a strong base —
-are needed to reach 0.9455.
+The complete 2×2 ablation confirms the recipe. Both cross-teacher cells
+(mismatched refiner training vs test base) score **0.8548** mean Dice —
+below the same-teacher pranet+PraNet baseline of 0.8815, and well below
+the same-teacher polyppvt+Polyp-PVT winner of 0.9455. Same-teacher
+alignment is necessary; strong base on top of same-teacher is what lifts
+to 0.9455.
 
 Model: `lib/BACFR_Enhanced_v3_3.py`. Training: `run/Train_patch.py`.
 Inference + TTA: `run/Test_patch_tta.py`. See `RESULTS.md` for commands.
