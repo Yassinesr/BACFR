@@ -9,9 +9,9 @@ Boundary-patch refinement on the standard 5-set polyp segmentation benchmark
 |---|---|---:|---|
 | BPR (boundary patch refinement, published) | Res2Net-50 | 0.807 | paper |
 | Polyp-PVT (end-to-end, published) | PVT-v2-B2 | 0.870 | paper |
-| BACFR — same-teacher, weak base (refines PraNet, trained on pranet-traindataset) | Res2Net-50 | 0.881 | this work |
-| BACFR — cross-teacher (refines Polyp-PVT, trained on pranet-traindataset) | Res2Net-50 | 0.855 | this work, ablation |
-| **BACFR — same-teacher, strong base (refines Polyp-PVT, trained on polyppvt-traindataset)** | **Res2Net-50** | **0.9455** | **this work, best** |
+| BACFR — same-teacher, weak base (trained on pranet-traindataset, refines PraNet) | Res2Net-50 | 0.881 | this work |
+| BACFR — cross-teacher (trained on polyppvt-traindataset, refines PraNet) | Res2Net-50 | 0.855 | this work, ablation |
+| **BACFR — same-teacher, strong base (trained on polyppvt-traindataset, refines Polyp-PVT)** | **Res2Net-50** | **0.9455** | **this work, best** |
 
 +13.8pp over published BPR. +7.6pp over published Polyp-PVT. +6.4pp over the
 prior best BACFR configuration.
@@ -32,15 +32,29 @@ prior best BACFR configuration.
 | Train data (refiner) | Test coarse masks | Pairing | Kvasir | ClinicDB | ColonDB | CVC-300 | ETIS | **Mean** |
 |---|---|---|---:|---:|---:|---:|---:|---:|
 | pranet-traindataset | PraNet predictions | same-teacher, weak base | 0.950 | 0.957 | 0.804 | 0.977 | 0.719 | 0.881 |
-| pranet-traindataset | **Polyp-PVT predictions** | **cross-teacher (mismatch)** | 0.929 | 0.942 | 0.794 | 0.918 | **0.691** | **0.855** |
+| **polyppvt-traindataset** | **PraNet predictions** | **cross-teacher (mismatch)** | 0.9285 | 0.9424 | 0.7938 | 0.9177 | **0.6914** | **0.855** |
 | **polyppvt-traindataset** | **Polyp-PVT predictions** | **same-teacher, strong base** | **0.9619** | **0.9793** | **0.9010** | **0.9878** | **0.8973** | **0.9455** |
 
-The middle row is the critical ablation. It substitutes the stronger
-Polyp-PVT base at test time but keeps the refiner trained on PraNet
-patches. Mean Dice **drops to 0.855**, **below** the all-PraNet baseline
-of 0.881 — even though the test-time coarse masks are objectively
-better. Replacing the refiner with one trained on Polyp-PVT patches
-(bottom row) recovers and exceeds the baseline by 6.4pp.
+The cleanest apples-to-apples for the same-teacher hypothesis is the
+**first two rows**: both refine the same PraNet test predictions. Only
+the training distribution differs. Same-teacher (top row, pranet-trained,
+0.881) **beats** cross-teacher (middle row, polyppvt-trained, 0.855) by
+**0.026** mean Dice — the cost of training the refiner on the wrong
+base's error patterns. ETIS shows the gap most clearly: 0.719 → 0.691
+(−0.028) on identical test inputs.
+
+The bottom row then shows what same-teacher pairing buys when you also
+swap to a stronger base: another **+6.4pp** mean Dice and **+0.206 on
+ETIS** specifically.
+
+### Untested fourth cell
+
+`pranet-traindataset` + `Polyp-PVT predictions` — the other cross-teacher
+direction — has not been measured. By the same-teacher hypothesis it
+should also under-perform the bottom row's 0.9455, since the refiner
+would be trained on PraNet's error distribution but deployed on
+Polyp-PVT's. Cheap to run (inference only, no new training); would close
+the 2×2 matrix for the paper.
 
 ## Why this recipe wins
 
@@ -55,15 +69,17 @@ two factors, and the ablation above shows you need both.
    are coarser and more global; Polyp-PVT's are subtler and finer. A
    refiner trained on one teacher's error distribution and deployed on
    another's has to generalize across two different error modes, which it
-   does poorly. The cross-teacher ablation (middle row) demonstrates this:
-   despite getting a stronger starting point at test time, the refiner
-   over-corrects on patches whose error pattern it never trained on.
+   does poorly. The cross-teacher row (polyppvt-trained, PraNet test
+   predictions) demonstrates this on a held-fixed test base: the same
+   PraNet predictions are refined, but a mismatched training distribution
+   costs 0.026 mean Dice vs the same-teacher pranet+PraNet baseline.
 2. **Quality of the starting point (strong base).** A stronger base
    segmenter produces coarse masks closer to ground truth. The refiner
    only has to bridge a small gap. Polyp-PVT raw is 0.870 mean Dice;
    PraNet raw is ≈0.81. The refiner gets a 6pp head start before it does
    anything. But this head start is wasted unless condition (1) is also
-   met — the middle row of the ablation makes that explicit.
+   met — switching to a stronger base only pays off when the refiner has
+   actually been trained on that base's error patterns.
 
 The winning recipe pairs both: same-teacher alignment **and** the
 strongest available teacher.
@@ -74,17 +90,27 @@ ETIS is the smallest test set and the most out-of-distribution relative to
 the Kvasir+ClinicDB training source. It's where mismatched train/test
 error distributions break down first.
 
-| Recipe | ETIS Dice | Δ vs raw Polyp-PVT (0.787) |
+**Same-test-base comparison (both rows refine PraNet's ETIS predictions):**
+
+| Recipe | ETIS Dice |
+|---|---:|
+| Same-teacher (pranet-trained refiner) | **0.719** |
+| Cross-teacher (polyppvt-trained refiner) | 0.691 |
+
+Identical test inputs, only the refiner's training data differs — and the
+mismatched training distribution costs **−0.028 on ETIS** alone (most of
+the −0.026 mean drop). The same dataset under the same coarse-mask
+input, with a wrongly-trained refiner.
+
+**Strong-base, same-teacher gain (vs same-teacher with weak base):**
+
+| Recipe | ETIS Dice | Δ vs same-teacher weak (0.719) |
 |---|---:|---:|
 | Same-teacher, weak base (pranet+PraNet) | 0.719 | — |
-| Cross-teacher (pranet refines Polyp-PVT) | 0.691 | **−0.096** (mismatch over-corrects) |
-| **Same-teacher, strong base (polyppvt+Polyp-PVT)** | **0.897** | **+0.110** |
+| **Same-teacher, strong base (polyppvt+Polyp-PVT)** | **0.897** | **+0.178** |
 
-Note the cross-teacher row scores *worse on ETIS than even raw Polyp-PVT*:
-applying a mismatched refiner actively degrades the base prediction it's
-supposed to improve. The same-teacher recipe inverts this — same input
-coarse masks (Polyp-PVT), different refiner training data, and ETIS jumps
-+0.206 (0.691 → 0.897).
+ETIS jumps +0.178 when both conditions are satisfied — the largest
+single-dataset gain in this work.
 
 ## Architecture (what's actually doing the work)
 
@@ -157,14 +183,15 @@ The coarse-mask source can also be specified in the config under
 
 ```bash
 python run/Test_patch_tta.py \
-  --config configs/BACFR_Enhanced_v3_3.yaml \
-  --pth checkpoints/<pranet-trained checkpoint>/best.pth \
-  --dt_path <path to Polyp-PVT test predictions> \
-  --out_dir results_cl/BACFR_pranet_refines_polyppvt
+  --config configs/BACFR_Enhanced_v3_3_polyppvt.yaml \
+  --pth checkpoints/<polyppvt-trained checkpoint>/best.pth \
+  --dt_path <path to PraNet test predictions> \
+  --out_dir results_cl/BACFR_polyppvt_refines_pranet
 ```
 
-Same pranet-trained checkpoint as the 0.881 row, but refining Polyp-PVT
-predictions instead of PraNet predictions. Should yield ~0.855 mean.
+Same polyppvt-trained checkpoint as the winning 0.9455 row, but refining
+PraNet predictions instead of Polyp-PVT predictions. Should yield ~0.855
+mean.
 
 ### Evaluate
 
@@ -194,10 +221,10 @@ Point it at the `out_dir` from the test step.
   `(H,W)` with only `{0, 255}`, change `Test.Dataset.img_subdir` to
   `images` in the config.
 - **Fourth cell of the matrix untested.** Training BACFR on
-  polyppvt-traindataset and refining PraNet predictions has not been
-  measured. The diversity hypothesis predicts another cross-teacher
-  regression similar to the 0.855 row. Adding this cell would close the
-  ablation matrix.
+  pranet-traindataset and refining Polyp-PVT predictions — the other
+  cross-teacher direction — has not been measured. The same-teacher
+  hypothesis predicts another sub-0.9455 result. Adding this cell would
+  close the ablation matrix for the paper.
 
 ## Files
 
