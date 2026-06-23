@@ -148,6 +148,8 @@ def train(opt, args):
         use_boundary_contrast=getattr(opt.Model, 'use_boundary_contrast', False),
         use_hf_gate=getattr(opt.Model, 'use_hf_gate', False),
         use_flip_consistency=getattr(opt.Model, 'use_flip_consistency', False),
+        use_error_focus=getattr(opt.Model, 'use_error_focus', False),
+        error_focus_weight=getattr(opt.Model, 'error_focus_weight', 4.0),
         edge_dist_mode=getattr(opt.Model, 'edge_dist_mode', 'cdist'),
     )
 

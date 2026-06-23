@@ -51,6 +51,8 @@ class BACFR_Enhanced_v3_3(nn.Module):
                  use_hf_gate=False,
                  use_flip_consistency=True,      # NEW
                  flip_consistency_max=0.3,       # NEW: peak loss weight
+                 use_error_focus=False,          # NEW: upweight coarse!=GT pixels
+                 error_focus_weight=4.0,         # NEW: extra weight on error pixels
                  edge_dist_mode='cdist',
                  beta_uncertainty=0.5, gamma_consistency=1.0,
                  bc_margin=0.3, bc_push_weight=0.5):
@@ -62,6 +64,8 @@ class BACFR_Enhanced_v3_3(nn.Module):
         self.use_hf_gate = use_hf_gate
         self.use_flip_consistency = use_flip_consistency
         self.flip_consistency_max = flip_consistency_max
+        self.use_error_focus = use_error_focus
+        self.error_focus_weight = error_focus_weight
         self.beta_u = beta_uncertainty
         self.gamma_cons = gamma_consistency
 
@@ -135,6 +139,28 @@ class BACFR_Enhanced_v3_3(nn.Module):
             return 0.0
         sched = [0.00, 0.05, 0.10, 0.20, 0.20, 0.20, 0.20, 0.10, 0.10, 0.10]
         return sched[max(0, min(self._epoch(), len(sched) - 1))]
+
+    def _error_weight(self, mask, y):
+        """Error-focus pixel weight: 1 + error_focus_weight on pixels where
+        the coarse input mask disagrees with GT — the pixels the refiner
+        must actually correct rather than copy. On a strong base most
+        boundary pixels are already correct, so without this the loss is
+        dominated by easy copy pixels and the refiner learns to echo the
+        coarse mask. `mask` and `y` are at base (prediction) resolution.
+        Returns None when error focus is disabled (baseline behavior)."""
+        if not self.use_error_focus or y is None:
+            return None
+        with torch.no_grad():
+            err = ((mask > 0.5).float() != (y > 0.5).float()).float()
+        return 1.0 + self.error_focus_weight * err
+
+    @staticmethod
+    def _combine_w(a, b):
+        if a is None:
+            return b
+        if b is None:
+            return a
+        return a * b
 
     def _lambda_flip(self):
         """Schedule for flip-consistency loss weight."""
@@ -241,16 +267,22 @@ class BACFR_Enhanced_v3_3(nn.Module):
                 u_min = u.amin(dim=(2, 3), keepdim=True)
                 u_max = u.amax(dim=(2, 3), keepdim=True)
                 u_norm = (u - u_min) / (u_max - u_min).clamp(min=1e-6)
-                w_pix = 1.0 + self.beta_u * u_norm
+                w_dual = 1.0 + self.beta_u * u_norm
         else:
             fg_up_all = out2_all * 0.0
             bg_up_all = out2_all * 0.0
-            w_pix = None
+            w_dual = None
 
-        loss4 = self.loss_fn(out4_all, y_all)
-        loss3 = self.loss_fn(out3_all, y_all)
-        loss2 = self.loss_fn(out2_all, y_all, pixel_weight=w_pix) \
-                if self.use_dual_heads else self.loss_fn(out2_all, y_all)
+        # Error-focus weight applies to ALL deep-supervision scales (push
+        # every scale to fix errors, not copy). Dual-head uncertainty weight
+        # stays on the finest head only (loss2), matching baseline behavior.
+        # When error focus is off, w_err is None and behavior is identical
+        # to the original.
+        w_err = self._error_weight(m_all, y_all)
+        loss4 = self.loss_fn(out4_all, y_all, pixel_weight=w_err)
+        loss3 = self.loss_fn(out3_all, y_all, pixel_weight=w_err)
+        loss2 = self.loss_fn(out2_all, y_all,
+                             pixel_weight=self._combine_w(w_dual if self.use_dual_heads else None, w_err))
         main_loss = loss2 + loss3 + loss4
 
         # ---- Aux dual-head losses ----
@@ -344,14 +376,15 @@ class BACFR_Enhanced_v3_3(nn.Module):
                     u_min = u.amin(dim=(2, 3), keepdim=True)
                     u_max = u.amax(dim=(2, 3), keepdim=True)
                     u_norm = (u - u_min) / (u_max - u_min).clamp(min=1e-6)
-                    w_pix = 1.0 + self.beta_u * u_norm
+                    w_dual = 1.0 + self.beta_u * u_norm
             else:
-                w_pix = None
+                w_dual = None
 
-            loss4 = self.loss_fn(out4_up, y)
-            loss3 = self.loss_fn(out3_up, y)
-            loss2 = self.loss_fn(out2_up, y, pixel_weight=w_pix) \
-                    if self.use_dual_heads else self.loss_fn(out2_up, y)
+            w_err = self._error_weight(mask, y)
+            loss4 = self.loss_fn(out4_up, y, pixel_weight=w_err)
+            loss3 = self.loss_fn(out3_up, y, pixel_weight=w_err)
+            loss2 = self.loss_fn(out2_up, y,
+                                 pixel_weight=self._combine_w(w_dual if self.use_dual_heads else None, w_err))
             main_loss = loss2 + loss3 + loss4
 
             lam_aux = self._lambda_aux()
