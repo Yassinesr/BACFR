@@ -154,7 +154,8 @@ if __name__ == '__main__':
     model.cuda().eval()
 
     # accumulator[testset][bound_name] = list of per-image Dice
-    bounds = ['raw_coarse', 'fully_refined', 'oracle_image', 'oracle_pixel']
+    bounds = ['raw_coarse', 'fully_refined', 'oracle_image', 'oracle_pixel',
+              'oracle_geometric']
     results = {ts: {b: [] for b in bounds} for ts in opt.Test.Dataset.datasets}
 
     for testset in opt.Test.Dataset.datasets:
@@ -216,10 +217,23 @@ if __name__ == '__main__':
             # oracle_image: per image, pick max of raw_coarse vs fully_refined
             d_oi = max(d_raw, d_fr)
 
+            # oracle_geometric (Bound C): ASSUME a perfect refiner that always
+            # outputs GT at every touched pixel. This removes the dependency on
+            # which refiner we trained -- it bounds the patch-refinement
+            # PARADIGM itself on this base segmenter. The remaining error is
+            # purely structural: coarse-mask pixels that disagree with GT but
+            # are never touched by any boundary patch (missed regions). No
+            # refiner / gate / ensemble / training trick can exceed this.
+            geo_out = coarse_bool.copy()
+            if touched.any():
+                geo_out[touched] = gt_bool[touched]
+            d_geo = dice_bin(geo_out, gt_bool)
+
             results[testset]['raw_coarse'].append(d_raw)
             results[testset]['fully_refined'].append(d_fr)
             results[testset]['oracle_image'].append(d_oi)
             results[testset]['oracle_pixel'].append(d_op)
+            results[testset]['oracle_geometric'].append(d_geo)
 
         print(f'[oracle] processed {testset}: {len(results[testset]["raw_coarse"])} images')
 
@@ -242,12 +256,31 @@ if __name__ == '__main__':
     # ---- interpretation ----
     headroom_image = summary['oracle_image'] - summary['fully_refined']
     headroom_pixel = summary['oracle_pixel'] - summary['fully_refined']
+    headroom_geo = summary['oracle_geometric'] - summary['fully_refined']
     print()
-    print(f'Current (fully_refined):           {summary["fully_refined"]:.4f}')
-    print(f'Headroom to oracle_image:          +{headroom_image:.4f}  '
-          f'(max gain from a perfect image-level refine/skip policy)')
-    print(f'Headroom to oracle_pixel (HARD):   +{headroom_pixel:.4f}  '
-          f'(max gain from ANY inference-only pixel-level strategy)')
+    print(f'Current (fully_refined):              {summary["fully_refined"]:.4f}')
+    print(f'Headroom to oracle_image:             +{headroom_image:.4f}  '
+          f'(perfect image-level refine/skip policy)')
+    print(f'Headroom to oracle_pixel:             +{headroom_pixel:.4f}  '
+          f'(perfect gate over {{coarse, THIS refiner}})')
+    print(f'Headroom to oracle_geometric (ABS):   +{headroom_geo:.4f}  '
+          f'(perfect refiner -> GT at every touched pixel)')
+    print()
+    print(f'ABSOLUTE PARADIGM CEILING (geometric): {summary["oracle_geometric"]:.4f}')
+    print(f'  This is the max Dice the patch-refinement paradigm can reach on')
+    print(f'  THIS base segmenter, with ANY refiner. The gap from 1.0 is error')
+    print(f'  that lives outside the boundary patches (missed regions) -- a')
+    print(f'  property of the base segmenter + split() heuristic, not the model.')
+    print()
+    # How much of the absolute ceiling does a better REFINER (not just gating)
+    # still have to give? gap between the geometric ceiling and what a perfect
+    # gate on the current refiner would reach.
+    refiner_room = summary['oracle_geometric'] - summary['oracle_pixel']
+    print(f'Refiner-improvement room:             +{refiner_room:.4f}  '
+          f'(geometric ceiling - current-refiner oracle)')
+    print(f'  If large, a BETTER REFINER (e.g. error-focus, retrain) can still')
+    print(f'  climb. If ~0, the current refiner already has every reachable')
+    print(f'  pixel and only gating slack remains.')
     print()
     if headroom_pixel < 0.005:
         print('VERDICT: ~no headroom. The refiner makes ~the same calls as coarse.')
