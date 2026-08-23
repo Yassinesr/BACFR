@@ -153,6 +153,10 @@ def merge(maskdts, detss, maskss, patch_size=64):
 # ==============================================================
 def test(opt, args, out_dir, pth, dt_path):
     os.makedirs(out_dir, exist_ok=True)
+    # Patch model-input resolution. MUST match the training resize (UACANet
+    # configs train at 352, so set Test.Dataset.out_size: 352); default 256
+    # matches the BACFR refiner's 256 training.
+    out_size = int(getattr(opt.Test.Dataset, 'out_size', 256))
 
     ckpt = torch.load(pth, map_location='cuda')
 
@@ -194,7 +198,7 @@ def test(opt, args, out_dir, pth, dt_path):
         for sample in test_loader:
             mask = sample['gt'].squeeze(1)
             image = sample['image']
-            dets, img_patches, dt_patches = split(image, mask)
+            dets, img_patches, dt_patches = split(image, mask, out_size=out_size)
             if dets is None:
                 print(sample['name'])
                 continue
@@ -273,17 +277,23 @@ if __name__ == '__main__':
             'No coarse-mask source specified. Pass --dt_path, set '
             'Test.Dataset.dt_path in the config, or export BACFR_DT_PATH.')
 
-    model = eval(opt.Model.name)(
+    # Only the 3 core args are common to every model. BACFR-specific knobs are
+    # forwarded ONLY when the config sets them, so plain models like UACANet
+    # (which take just channels/output_stride/pretrained) build without a
+    # TypeError on unexpected kwargs.
+    model_kwargs = dict(
         channels=opt.Model.channels,
         output_stride=opt.Model.output_stride,
         pretrained=opt.Model.pretrained,
-        use_mccpb=getattr(opt.Model, 'use_mccpb', False),
-        use_dual_heads=getattr(opt.Model, 'use_dual_heads', False),
-        use_boundary_contrast=getattr(opt.Model, 'use_boundary_contrast', False),
-        use_hf_gate=getattr(opt.Model, 'use_hf_gate', False),
-        use_flip_consistency=getattr(opt.Model, 'use_flip_consistency', False),
-        edge_dist_mode=getattr(opt.Model, 'edge_dist_mode', 'cdist'),
     )
+    for _k in ('use_mccpb', 'use_dual_heads', 'use_boundary_contrast',
+               'use_hf_gate', 'use_flip_consistency', 'use_error_focus',
+               'error_focus_weight', 'edge_dist_mode', 'use_residual',
+               'use_gate', 'anchor_scale', 'delta_scale', 'lambda_gate_max',
+               'gate_detach', 'flip_consistency_max'):
+        if hasattr(opt.Model, _k):
+            model_kwargs[_k] = getattr(opt.Model, _k)
+    model = eval(opt.Model.name)(**model_kwargs)
 
     print(f"Running TTA inference: {pth} -> {out_dir}")
     print(f"  coarse-mask source: {dt_path}")

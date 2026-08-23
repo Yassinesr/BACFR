@@ -210,6 +210,8 @@ def merge(maskdts, detss, maskss, patch_size=64):
 # ======================================================
 def test(opt, args, out_dir, pth, type, dt_path, model):
     os.makedirs(out_dir, exist_ok=True)
+    # Patch model-input resolution; must match the training resize.
+    out_size = int(getattr(opt.Test.Dataset, 'out_size', 256))
 
     state = torch.load(pth, map_location='cpu')
     # Support either raw state_dict or {'state_dict': ..., 'config': ...} bundle
@@ -230,8 +232,9 @@ def test(opt, args, out_dir, pth, type, dt_path, model):
         save_dir = os.path.join(out_dir, testset)
         os.makedirs(save_dir, exist_ok=True)
 
-        root = "/home/yassine/projects/UACANet-main/dataset/TestDataset"
-        img_path = os.path.join(root, testset, 'images')
+        root = opt.Test.Dataset.root
+        img_subdir = getattr(opt.Test.Dataset, 'img_subdir', 'images')
+        img_path = os.path.join(root, testset, img_subdir)
         mask_path = os.path.join(dt_path, testset)
         test_dataset = eval(opt.Test.Dataset.type)(
             img_root=img_path, mask_root=mask_path,
@@ -250,7 +253,7 @@ def test(opt, args, out_dir, pth, type, dt_path, model):
             image = sample['image']
 
             s = {}
-            dets, img_patches, dt_patches = split(image, mask)
+            dets, img_patches, dt_patches = split(image, mask, out_size=out_size)
 
             if dets is None:
                 print(sample['name'])
@@ -280,24 +283,41 @@ def test(opt, args, out_dir, pth, type, dt_path, model):
 # Main
 # ======================================================
 if __name__ == '__main__':
+    import argparse
     args = parse_args()
-    config = 'configs/BACFR_Enhanced_v3_3.yaml'
+
+    # CLI overrides (config comes from --config via parse_args; these layer on top).
+    extra = argparse.ArgumentParser(add_help=False)
+    extra.add_argument('--pth', type=str, default=None,
+                       help='checkpoint .pth; default: <checkpoint_dir>/latest.pth')
+    extra.add_argument('--out_dir', type=str, default=None,
+                       help='output dir; default: results_cl/<ckpt_dir_basename>_noTTA')
+    extra.add_argument('--dt_path', type=str, default=None,
+                       help='coarse-mask source root (per-testset subdirs)')
+    ex, _ = extra.parse_known_args()
+
+    config = args.config if os.path.isfile(args.config) else 'configs/BACFR_Enhanced_v3_3.yaml'
+    print(f'[Test_patches] using config: {config}')
     opt = load_config(config)
-    pth = 'checkpoints/BACFR_Enhanced_v3_3/epoch_4.pth'
 
-    out_dir = 'results_cl/BACFR_Enhanced_v3_3notta'
-    dt_path = "/home/yassine/projects/UACANet-main/results_cl/paper_results/PraNet-results/PraNet"
+    ckpt_dir = opt.Test.Checkpoint.checkpoint_dir
+    pth = ex.pth or os.path.join(ckpt_dir, 'latest.pth')
+    out_dir = ex.out_dir or os.path.join(
+        'results_cl', os.path.basename(ckpt_dir.rstrip('/')) + '_noTTA')
+    dt_path = (ex.dt_path
+               or getattr(opt.Test.Dataset, 'dt_path', None)
+               or os.environ.get('BACFR_DT_PATH'))
+    if not dt_path:
+        raise ValueError('No coarse-mask source: pass --dt_path or set '
+                         'Test.Dataset.dt_path in the config.')
 
-    # NEW: build the model with the full set of flags from the config
+    # build_model_from_config filters kwargs via inspect, so plain models
+    # (UACANet: channels/output_stride/pretrained only) build fine.
     model = build_model_from_config(opt)
 
     print(out_dir)
     print(pth)
     print("Model:", opt.Model.name)
-    print("Flags being applied:")
-    for flag in ['use_mccpb', 'use_dual_heads', 'use_boundary_contrast',
-                 'use_hf_gate', 'use_edge_gate', 'edge_dist_mode', 'attn_hidden']:
-        if hasattr(opt.Model, flag):
-            print(f"  {flag} = {getattr(opt.Model, flag)}")
+    print(f"coarse-mask source (dt_path): {dt_path}")
 
-    test(opt, args, out_dir, pth, type, dt_path, model)
+    test(opt, args, out_dir, pth, None, dt_path, model)

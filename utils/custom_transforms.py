@@ -124,22 +124,28 @@ class random_dilation_erosion:
         self.kernel_range = kernel_range
 
     def __call__(self, sample):
-        gt = sample['gt']
-        mask = sample['mask']
-        gt = np.array(gt)
-        mask = np.array(mask)
+        # 'mask' (coarse) only exists for the refiner datasets; plain segmenter
+        # datasets (e.g. UACANet's PolypDataset) have image+gt only. Guard it so
+        # this transform works for both.
+        has_mask = 'mask' in sample
+        gt = np.array(sample['gt'])
+        if has_mask:
+            mask = np.array(sample['mask'])
         key = np.random.random()
         # kernel = np.ones(tuple([np.random.randint(*self.kernel_range)]) * 2, dtype=np.uint8)
         kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (np.random.randint(*self.kernel_range), ) * 2)
         if key < 1/3:
             gt = cv2.dilate(gt, kernel)
-            mask = cv2.dilate(mask, kernel)
+            if has_mask:
+                mask = cv2.dilate(mask, kernel)
         elif 1/3 <= key < 2/3:
             gt = cv2.erode(gt, kernel)
-            mask = cv2.erode(mask, kernel)
+            if has_mask:
+                mask = cv2.erode(mask, kernel)
 
         sample['gt'] = Image.fromarray(gt)
-        sample['mask'] = Image.fromarray(mask)
+        if has_mask:
+            sample['mask'] = Image.fromarray(mask)
         #print('dilation after')
         #print(np.unique(np.array(sample['mask'])))
         return sample

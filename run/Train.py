@@ -12,17 +12,27 @@ from torch.optim import Adam, SGD
 from torch.cuda.amp import GradScaler, autocast
 from torch.utils.data.distributed import DistributedSampler
 
-filepath = os.path.split(os.path.abspath(__file__))[0]
-repopath = os.path.split(filepath)[0]
-sys.path.append(repopath)
+_THIS_DIR = os.path.dirname(os.path.abspath(__file__))
+_REPO_ROOT = os.path.dirname(_THIS_DIR)
+if _REPO_ROOT not in sys.path:
+    sys.path.insert(0, _REPO_ROOT)
 
 from utils.dataloader import *
 from lib.optim import *
 from lib import *
 
 def train(opt, args):
+    # PolypDataset in this repo takes explicit img_root/mask_root (it was
+    # repurposed for the patch refiner). Derive them from Train.Dataset.root
+    # + subdir names ('images'/'masks' by default; override via
+    # img_subdir/mask_subdir in the config if your layout differs).
+    _root = opt.Train.Dataset.root
+    _img_sub = getattr(opt.Train.Dataset, 'img_subdir', 'images')
+    _mask_sub = getattr(opt.Train.Dataset, 'mask_subdir', 'masks')
     train_dataset = eval(opt.Train.Dataset.type)(
-        root=opt.Train.Dataset.root, transform_list=opt.Train.Dataset.transform_list)
+        img_root=os.path.join(_root, _img_sub),
+        mask_root=os.path.join(_root, _mask_sub),
+        transform_list=opt.Train.Dataset.transform_list)
 
     if args.device_num > 1:
         torch.cuda.set_device(args.local_rank)
@@ -39,9 +49,16 @@ def train(opt, args):
                                     pin_memory=opt.Train.Dataloader.pin_memory,
                                     drop_last=True)
 
-    model = eval(opt.Model.name)(channels=opt.Model.channels,
-                                 output_stride=opt.Model.output_stride,
-                                 pretrained=opt.Model.pretrained)
+    _model_kwargs = dict(channels=opt.Model.channels,
+                         output_stride=opt.Model.output_stride,
+                         pretrained=opt.Model.pretrained)
+    # Forward FCT knobs only when the config sets them, so vanilla models
+    # (UACANet: 3 args) still build; UACANet_FCT picks these up.
+    for _k in ('fct_weight', 'fct_warmup_iters', 'fct_use_vflip',
+               'use_flip_consistency', 'fct_supervise_flips'):
+        if hasattr(opt.Model, _k):
+            _model_kwargs[_k] = getattr(opt.Model, _k)
+    model = eval(opt.Model.name)(**_model_kwargs)
 
     if args.device_num > 1:
         model = nn.SyncBatchNorm.convert_sync_batchnorm(model)
@@ -54,8 +71,13 @@ def train(opt, args):
     decoder_params = nn.ParameterList()
 
     for name, param in model.named_parameters():
-        if 'backbone' in name:
-            if 'backbone.layer' in name:
+        # Match both naming conventions: UACANet/BACFR name the encoder
+        # `resnet.*`; older models use `backbone.*`. Backbone stages (layer*)
+        # train at base lr, the stem stays frozen, and the decoder (everything
+        # else) trains at 10x lr. Without the `resnet` case the whole UACANet
+        # backbone would land in decoder_params and train at 10x lr.
+        if 'backbone' in name or 'resnet' in name:
+            if 'layer' in name:
                 backbone_params.append(param)
             else:
                 pass

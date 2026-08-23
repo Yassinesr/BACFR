@@ -139,7 +139,7 @@ def train(opt, args):
     )
 
     # Model initialization
-    model = eval(opt.Model.name)(
+    model_kwargs = dict(
         channels=opt.Model.channels,
         output_stride=opt.Model.output_stride,
         pretrained=opt.Model.pretrained,
@@ -152,6 +152,17 @@ def train(opt, args):
         error_focus_weight=getattr(opt.Model, 'error_focus_weight', 4.0),
         edge_dist_mode=getattr(opt.Model, 'edge_dist_mode', 'cdist'),
     )
+    # ODRNet-specific knobs. Only forwarded when the config sets them, so we
+    # never pass unknown kwargs to models (e.g. BACFR*) that lack **kwargs.
+    # ODRNet.__init__ accepts **kwargs, so it also tolerates the keys above.
+    for _k in ('use_residual', 'use_gate', 'anchor_scale', 'delta_scale',
+               'lambda_gate_max', 'gate_detach', 'flip_consistency_max',
+               # UACANet_Refine / _FCT knobs
+               'guidance_scale', 'fct_weight', 'fct_warmup_iters',
+               'fct_use_vflip', 'fct_supervise_flips'):
+        if hasattr(opt.Model, _k):
+            model_kwargs[_k] = getattr(opt.Model, _k)
+    model = eval(opt.Model.name)(**model_kwargs)
 
     # Pass loss weights from config (kept for backward compatibility)
     if hasattr(opt.Model, 'bg_loss_weight'):
