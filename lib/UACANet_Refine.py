@@ -130,11 +130,6 @@ class UACANet_Refine_FCT(UACANet_Refine):
             return self.fct_weight
         return self.fct_weight * (it / float(self.fct_warmup_iters))
 
-    @staticmethod
-    def _stack(views, key, tensors):
-        if tensors[0] is not None:
-            views[key] = torch.cat(tensors, dim=0)
-
     def forward(self, sample):
         x = sample['image']
         y = sample.get('gt', None)
