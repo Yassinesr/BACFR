@@ -57,6 +57,13 @@ def build_model_from_config(opt):
         'use_edge_gate',
         'edge_dist_mode',
         'attn_hidden',
+        # UACANet_Refine / _FCT
+        'guidance_scale',
+        'use_flip_consistency',
+        'fct_weight',
+        'fct_warmup_iters',
+        'fct_use_vflip',
+        'fct_supervise_flips',
     ]
     for flag in optional_flags:
         if hasattr(opt.Model, flag):
