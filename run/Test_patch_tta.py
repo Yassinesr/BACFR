@@ -286,7 +286,8 @@ if __name__ == '__main__':
         output_stride=opt.Model.output_stride,
         pretrained=opt.Model.pretrained,
     )
-    for _k in ('use_mccpb', 'use_dual_heads', 'use_boundary_contrast',
+    for _k in ('guidance_scale',
+               'use_mccpb', 'use_dual_heads', 'use_boundary_contrast',
                'use_hf_gate', 'use_flip_consistency', 'use_error_focus',
                'error_focus_weight', 'edge_dist_mode', 'use_residual',
                'use_gate', 'anchor_scale', 'delta_scale', 'lambda_gate_max',
