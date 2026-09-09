@@ -98,11 +98,11 @@ def split(img, maskdts, boundary_width=3, iou_thresh=0.55, patch_size=64, out_si
         return None, None, None
 
     img = img.float().contiguous()
-    img_patches = roi_align(img, _to_rois(all_dets), patch_size)
+    img_patches = roi_align(img, _to_rois(all_dets), patch_size, aligned=True)
 
     _detss = [torch.cat([i * _.new_ones((_.size(0), 1)), _], dim=1) for i, _ in enumerate(detss)]
     _detss = torch.cat(_detss)
-    dt_patches = roi_align(maskdts[:, None, :, :], _detss, patch_size)
+    dt_patches = roi_align(maskdts[:, None, :, :], _detss, patch_size, aligned=True)
 
     img_patches = F.interpolate(img_patches, (out_size, out_size), mode='bilinear')
     dt_patches = F.interpolate(dt_patches, (out_size, out_size), mode='nearest')
