@@ -9,3 +9,4 @@ __pycache__/
 .ipynb_checkpoints/
 BACFR_Report.docx
 BACFR_Recent_Report.docx
+logs/
