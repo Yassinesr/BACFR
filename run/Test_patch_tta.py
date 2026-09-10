@@ -113,10 +113,10 @@ def split(img, maskdts, boundary_width=3, iou_thresh=0.55, patch_size=64, out_si
     if all_dets.size(0) == 0:
         return None, None, None
     img = img.float().contiguous()
-    img_patches = roi_align(img, _to_rois(all_dets), patch_size)
+    img_patches = roi_align(img, _to_rois(all_dets), patch_size, aligned=True)
     _detss = [torch.cat([i * _.new_ones((_.size(0), 1)), _], dim=1) for i, _ in enumerate(detss)]
     _detss = torch.cat(_detss)
-    dt_patches = roi_align(maskdts[:, None, :, :], _detss, patch_size)
+    dt_patches = roi_align(maskdts[:, None, :, :], _detss, patch_size, aligned=True)
     img_patches = F.interpolate(img_patches, (out_size, out_size), mode='bilinear')
     dt_patches = F.interpolate(dt_patches, (out_size, out_size), mode='nearest')
     return detss, img_patches, dt_patches
@@ -153,6 +153,10 @@ def merge(maskdts, detss, maskss, patch_size=64):
 # ==============================================================
 def test(opt, args, out_dir, pth, dt_path):
     os.makedirs(out_dir, exist_ok=True)
+    # Patch model-input resolution. MUST match the training resize (UACANet
+    # configs train at 352, so set Test.Dataset.out_size: 352); default 256
+    # matches the BACFR refiner's 256 training.
+    out_size = int(getattr(opt.Test.Dataset, 'out_size', 256))
 
     ckpt = torch.load(pth, map_location='cuda')
 
@@ -168,12 +172,20 @@ def test(opt, args, out_dir, pth, dt_path):
     model.cuda()
     model.eval()
 
+    # Test data root comes from the config; the per-testset image subdir
+    # name defaults to 'images' (the standard TestDataset layout has both
+    # 'images' = RGB inputs and 'gts' = ground-truth masks). Earlier
+    # versions of this script hardcoded 'gts', which silently leaked GT
+    # into the model input and inflated all reported numbers. Override
+    # via Test.Dataset.img_subdir if your layout differs.
+    root = opt.Test.Dataset.root
+    img_subdir = getattr(opt.Test.Dataset, 'img_subdir', 'images')
+
     for testset in opt.Test.Dataset.datasets:
         save_dir = os.path.join(out_dir, testset)
         os.makedirs(save_dir, exist_ok=True)
 
-        root = "/home/yassine/projects/UACANet-main/dataset/TestDataset"
-        img_path = os.path.join(root, testset, 'gts')
+        img_path = os.path.join(root, testset, img_subdir)
         mask_path = os.path.join(dt_path, testset)
         test_dataset = eval(opt.Test.Dataset.type)(
             img_root=img_path, mask_root=mask_path,
@@ -186,7 +198,7 @@ def test(opt, args, out_dir, pth, dt_path):
         for sample in test_loader:
             mask = sample['gt'].squeeze(1)
             image = sample['image']
-            dets, img_patches, dt_patches = split(image, mask)
+            dets, img_patches, dt_patches = split(image, mask, out_size=out_size)
             if dets is None:
                 print(sample['name'])
                 continue
@@ -208,27 +220,83 @@ def test(opt, args, out_dir, pth, dt_path):
                             refineds[i].cpu().numpy().astype(np.uint8) * 255)
 
 
+import argparse
+import glob
+
+
+def _find_latest_ckpt(ckpt_dir):
+    """Pick 'best.pth' if present, else the highest epoch_N.pth in `ckpt_dir`."""
+    best = os.path.join(ckpt_dir, 'best.pth')
+    if os.path.isfile(best):
+        return best
+    candidates = glob.glob(os.path.join(ckpt_dir, 'epoch_*.pth'))
+    if not candidates:
+        return None
+    def _epoch(p):
+        try:
+            return int(os.path.basename(p).split('_')[1].split('.')[0])
+        except Exception:
+            return -1
+    return max(candidates, key=_epoch)
+
+
 if __name__ == '__main__':
     args = parse_args()
-    config = 'configs/BACFR_Enhanced_v3_3.yaml'
+    config = args.config
+    if not os.path.isfile(config):
+        config = 'configs/BACFR_Enhanced_v3_3.yaml'
+    print(f'[Test_patch_tta] using config: {config}')
     opt = load_config(config)
 
-    # Change these two paths to point at your epoch-2 checkpoint and desired output
-    pth = 'checkpoints/BACFR_Enhanced_v3_3/epoch_4.pth'
-    out_dir = 'results_cl/BACFR_FCT_TTA'
-    dt_path = "/home/yassine/projects/UACANet-main/results_cl/paper_results/PraNet-results/PraNet"
+    # Test-time overrides (CLI > config-derived defaults > legacy hardcoded fallbacks).
+    extra = argparse.ArgumentParser(add_help=False)
+    extra.add_argument('--pth', type=str, default=None,
+                       help='checkpoint .pth path; default: latest epoch_*.pth in '
+                            'Test.Checkpoint.checkpoint_dir')
+    extra.add_argument('--out_dir', type=str, default=None,
+                       help='output directory; default: results_cl/<ckpt_dir_basename>_TTA')
+    extra.add_argument('--dt_path', type=str, default=None,
+                       help='coarse-mask source root (must contain per-testset subdirs)')
+    extra_args, _ = extra.parse_known_args()
 
-    model = eval(opt.Model.name)(
+    ckpt_dir = opt.Test.Checkpoint.checkpoint_dir
+    pth = extra_args.pth or _find_latest_ckpt(ckpt_dir)
+    if pth is None:
+        raise FileNotFoundError(
+            f'No checkpoint found in {ckpt_dir}. Pass --pth or train first.')
+
+    out_dir = extra_args.out_dir or os.path.join(
+        'results_cl', os.path.basename(ckpt_dir.rstrip('/')) + '_TTA')
+    # Source of coarse masks to refine. Resolution order:
+    #   --dt_path CLI flag > Test.Dataset.dt_path in config > env var BACFR_DT_PATH
+    dt_path = (extra_args.dt_path
+               or getattr(opt.Test.Dataset, 'dt_path', None)
+               or os.environ.get('BACFR_DT_PATH'))
+    if not dt_path:
+        raise ValueError(
+            'No coarse-mask source specified. Pass --dt_path, set '
+            'Test.Dataset.dt_path in the config, or export BACFR_DT_PATH.')
+
+    # Only the 3 core args are common to every model. BACFR-specific knobs are
+    # forwarded ONLY when the config sets them, so plain models like UACANet
+    # (which take just channels/output_stride/pretrained) build without a
+    # TypeError on unexpected kwargs.
+    model_kwargs = dict(
         channels=opt.Model.channels,
         output_stride=opt.Model.output_stride,
         pretrained=opt.Model.pretrained,
-        use_mccpb=getattr(opt.Model, 'use_mccpb', False),
-        use_dual_heads=getattr(opt.Model, 'use_dual_heads', False),
-        use_boundary_contrast=getattr(opt.Model, 'use_boundary_contrast', False),
-        use_hf_gate=getattr(opt.Model, 'use_hf_gate', False),
-        edge_dist_mode=getattr(opt.Model, 'edge_dist_mode', 'cdist'),
     )
+    for _k in ('guidance_scale',
+               'use_mccpb', 'use_dual_heads', 'use_boundary_contrast',
+               'use_hf_gate', 'use_flip_consistency', 'use_error_focus',
+               'error_focus_weight', 'edge_dist_mode', 'use_residual',
+               'use_gate', 'anchor_scale', 'delta_scale', 'lambda_gate_max',
+               'gate_detach', 'flip_consistency_max'):
+        if hasattr(opt.Model, _k):
+            model_kwargs[_k] = getattr(opt.Model, _k)
+    model = eval(opt.Model.name)(**model_kwargs)
 
     print(f"Running TTA inference: {pth} -> {out_dir}")
+    print(f"  coarse-mask source: {dt_path}")
     test(opt, args, out_dir, pth, dt_path)
     print("Done. Now run your eval script on this folder.")

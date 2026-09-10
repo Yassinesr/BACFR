@@ -10,9 +10,10 @@ import numpy as np
 from PIL import Image
 from torch.nn import modules
 
-filepath = os.path.split(os.path.abspath(__file__))[0]
-repopath = os.path.split(filepath)[0]
-sys.path.append(repopath)
+_THIS_DIR = os.path.dirname(os.path.abspath(__file__))
+_REPO_ROOT = os.path.dirname(_THIS_DIR)
+if _REPO_ROOT not in sys.path:
+    sys.path.insert(0, _REPO_ROOT)
 
 from utils.utils import *
 from utils.dataloader import *
@@ -39,7 +40,14 @@ def test(opt, args):
 
         os.makedirs(save_path, exist_ok=True)
 
-        test_dataset = eval(opt.Test.Dataset.type)(root=data_path, transform_list=opt.Test.Dataset.transform_list)
+        # PolypDataset takes img_root/mask_root (repurposed for the refiner).
+        # For the standard TestDataset layout <set>/images + <set>/masks.
+        _img_sub = getattr(opt.Test.Dataset, 'img_subdir', 'images')
+        _mask_sub = getattr(opt.Test.Dataset, 'mask_subdir', 'masks')
+        test_dataset = eval(opt.Test.Dataset.type)(
+            img_root=os.path.join(data_path, _img_sub),
+            mask_root=os.path.join(data_path, _mask_sub),
+            transform_list=opt.Test.Dataset.transform_list)
 
         test_loader = data.DataLoader(dataset=test_dataset,
                                         batch_size=1,

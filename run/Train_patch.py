@@ -139,7 +139,7 @@ def train(opt, args):
     )
 
     # Model initialization
-    model = eval(opt.Model.name)(
+    model_kwargs = dict(
         channels=opt.Model.channels,
         output_stride=opt.Model.output_stride,
         pretrained=opt.Model.pretrained,
@@ -148,8 +148,21 @@ def train(opt, args):
         use_boundary_contrast=getattr(opt.Model, 'use_boundary_contrast', False),
         use_hf_gate=getattr(opt.Model, 'use_hf_gate', False),
         use_flip_consistency=getattr(opt.Model, 'use_flip_consistency', False),
+        use_error_focus=getattr(opt.Model, 'use_error_focus', False),
+        error_focus_weight=getattr(opt.Model, 'error_focus_weight', 4.0),
         edge_dist_mode=getattr(opt.Model, 'edge_dist_mode', 'cdist'),
     )
+    # ODRNet-specific knobs. Only forwarded when the config sets them, so we
+    # never pass unknown kwargs to models (e.g. BACFR*) that lack **kwargs.
+    # ODRNet.__init__ accepts **kwargs, so it also tolerates the keys above.
+    for _k in ('use_residual', 'use_gate', 'anchor_scale', 'delta_scale',
+               'lambda_gate_max', 'gate_detach', 'flip_consistency_max',
+               # UACANet_Refine / _FCT knobs
+               'guidance_scale', 'fct_weight', 'fct_warmup_iters',
+               'fct_use_vflip', 'fct_supervise_flips'):
+        if hasattr(opt.Model, _k):
+            model_kwargs[_k] = getattr(opt.Model, _k)
+    model = eval(opt.Model.name)(**model_kwargs)
 
     # Pass loss weights from config (kept for backward compatibility)
     if hasattr(opt.Model, 'bg_loss_weight'):
@@ -171,20 +184,21 @@ def train(opt, args):
     else:
         model = model.cuda()
 
-    # Optimizer setup (unchanged from baseline)
+    # Optimizer setup (original BACFR design):
+    #   Backbone stages (resnet.layer1-4) train at base lr.
+    #   Decoder trains at 10x base lr.
+    #   Stem (resnet.conv1/bn1/maxpool) stays frozen.
     backbone_params = []
     decoder_params = []
-
     for name, param in model.named_parameters():
         if 'resnet' in name or 'backbone' in name:
             if 'layer' in name:
                 backbone_params.append(param)
         else:
             decoder_params.append(param)
-
     params_list = [
         {'params': backbone_params},
-        {'params': decoder_params, 'lr': opt.Train.Optimizer.lr * 10}
+        {'params': decoder_params, 'lr': opt.Train.Optimizer.lr * 10},
     ]
 
     optimizer = eval(opt.Train.Optimizer.type)(
@@ -347,7 +361,12 @@ def train(opt, args):
 
 if __name__ == '__main__':
     args = parse_args()
-    config = 'configs/BACFR_Enhanced_v3_3.yaml'
+    # Honor --config from CLI; fall back to BACFR_Enhanced_v3_3.yaml when the
+    # caller didn't pass one (parse_args' default points at a stale path).
+    config = args.config
+    if not os.path.isfile(config):
+        config = 'configs/BACFR_Enhanced_v3_3.yaml'
+    print(f'[Train_patch] using config: {config}')
     opt = load_config(config)
     train(opt, args)
 

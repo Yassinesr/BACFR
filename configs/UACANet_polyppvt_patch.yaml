@@ -1,0 +1,88 @@
+# Vanilla UACANet-S, VERBATIM recipe, only the training data is repointed to the
+# Polyp-PVT patch dataset. Nothing in the Train block is tuned/optimized: same
+# 352x352 resize, same augmentations, batch 32, 240 epochs, lr 1e-4, PolyLr as
+# configs/UACANet-S.yaml (channels 32, output_stride 32). The only training
+# changes are:
+#   - Train.Dataset.root -> the Polyp-PVT patch dataset
+#   - Train.Dataset.img_subdir/mask_subdir (mechanical: PolypDataset needs
+#     explicit img/mask roots; mask_subdir = ann_dir = GT patches)
+#   - Train.Checkpoint.checkpoint_dir (so it doesn't clobber UACANet-L)
+#
+# Train:  CUDA_VISIBLE_DEVICES=0 python run/Train.py --config configs/UACANet_polyppvt_patch.yaml --verbose
+# Test :  python run/Test_patch_tta.py --config configs/UACANet_polyppvt_patch.yaml \
+#           --pth snapshots/UACANet_polyppvt_patch/latest.pth \
+#           --dt_path /home/yassine/projects/Polyp-PVT/result_map/PolypPVT
+
+Model:
+    name: "UACANet"
+    channels: 32
+    output_stride: 32
+    pretrained: True
+
+Train:
+    Dataset:
+        type: "PolypDataset"
+        root: "dataset/polyppvt-traindataset/PatchesDataset-IOU-fusion/"
+        img_subdir: "img_dir/train"
+        mask_subdir: "ann_dir/train"
+        transform_list:
+            resize:
+                size: [352, 352]
+            random_scale_crop:
+                range: [0.75, 1.25]
+            random_flip:
+                lr: True
+                ud: True
+            random_rotate:
+                range: [0, 359]
+            random_image_enhance:
+                methods: ['contrast', 'sharpness', 'brightness']
+            random_dilation_erosion:
+                kernel_range: [2, 5]
+            tonumpy: NULL
+            normalize:
+                mean: [0.485, 0.456, 0.406]
+                std: [0.229, 0.224, 0.225]
+            totensor: NULL
+    Dataloader:
+        batch_size: 16
+        shuffle: True
+        num_workers: 8
+        pin_memory: False
+    Optimizer:
+        type: "Adam"
+        lr: 1.0e-04
+        weight_decay: 0.0
+        clip: 0.5
+        mixed_precision: False
+    Scheduler:
+        type: "PolyLr"
+        epoch: 20
+        gamma: 0.9
+        minimum_lr: 1.0e-07
+        warmup_iteration: 300
+    Checkpoint:
+        checkpoint_epoch: 1
+        checkpoint_dir: "snapshots/UACANet_polyppvt_patch"
+
+Test:
+    Dataset:
+        type: "PolypDataset"
+        # Refinement test via run/Test_patch_tta.py: images from <root>/<set>/images,
+        # coarse masks from --dt_path (or Test.Dataset.dt_path). No resize here --
+        # the patch splitter handles cropping/sizing.
+        root: "/home/yassine/projects/BPR/dataset/TestDataset"
+        img_subdir: "images"
+        dt_path: "/home/yassine/projects/Polyp-PVT/result_map/PolypPVT"
+        datasets: ['CVC-300', 'CVC-ClinicDB', 'Kvasir', 'CVC-ColonDB', 'ETIS-LaribPolypDB']
+        transform_list:
+            tonumpy: NULL
+            normalize:
+                mean: [0.485, 0.456, 0.406]
+                std: [0.229, 0.224, 0.225]
+            totensor: NULL
+    Dataloader:
+        num_workers: 8
+        pin_memory: True
+    Checkpoint:
+        checkpoint_dir: "snapshots/UACANet_polyppvt_patch"

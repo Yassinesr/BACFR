@@ -1,0 +1,107 @@
+# ARM A -- orientation augmentation OFF, no FCT, no TTA.
+#
+# Ablation ladder testing whether random_flip/random_rotate and FCT+TTA are
+# redundant mechanisms. This arm removes ALL orientation augmentation so that
+# the flip/rotation symmetry group is genuinely untrained. Everything else is
+# byte-identical to UACANet_refine_polyppvt_fct.yaml.
+#
+# NOTE: random_image_enhance is KEPT (photometric, not an orientation symmetry)
+#       so it acts as a control -- only the orientation axis changes.
+# NOTE: batch_size stays 6 (same as the FCT arms) even though this arm needs
+#       less memory, so the optimizer sees identical batch statistics.
+#
+# Train:         CUDA_VISIBLE_DEVICES=0 python run/Train_patch.py --config configs/UACANet_refine_polyppvt_noaug.yaml --verbose
+# Test (no-TTA): python run/Test_patches.py   --config configs/UACANet_refine_polyppvt_noaug.yaml --pth checkpoints/UACANet_refine_polyppvt_noaug/latest.pth --dt_path /home/yassine/projects/Polyp-PVT/result_map/PolypPVT
+# Test (TTA):    python run/Test_patch_tta.py --config configs/UACANet_refine_polyppvt_noaug.yaml --pth checkpoints/UACANet_refine_polyppvt_noaug/latest.pth --dt_path /home/yassine/projects/Polyp-PVT/result_map/PolypPVT
+
+Model:
+  name: UACANet_Refine
+  channels: 32          # UACANet-S
+  output_stride: 32     # UACANet-S
+  pretrained: true
+  guidance_scale: 3.0
+
+Train:
+  Dataset:
+    type: 'PatchDataset'
+    root: 'dataset/polyppvt-traindataset/PatchesDataset-IOU-fusion/'
+    transform_list:
+      resize:
+        size: [352, 352]
+      # >>> random_flip REMOVED  (arm A)
+      # >>> random_rotate REMOVED (arm A) -- continuous rotation supplies full
+      #     orientation diversity on its own, so it MUST go with the flips or
+      #     the ablation is void.
+      random_image_enhance:
+        methods: ['contrast', 'sharpness', 'brightness']
+      tonumpy: ~
+      normalize:
+        mean: [0.485, 0.456, 0.406]
+        std: [0.229, 0.224, 0.225]
+      totensor: ~
+
+  Dataloader:
+    batch_size: 6
+    shuffle: True
+    num_workers: 8
+    pin_memory: False
+
+  Optimizer:
+    type: 'Adam'
+    lr: 1.0e-04
+    weight_decay: 0.0
+    clip: 0.5
+    mixed_precision: False
+
+  Scheduler:
+    type: 'PolyLr'
+    epoch: 20
+    gamma: 0.9
+    minimum_lr: 1.0e-07
+    warmup_iteration: 300
+
+  Checkpoint:
+    checkpoint_epoch: 1
+    checkpoint_dir: 'checkpoints/UACANet_refine_polyppvt_noaug'
+
+Eval:
+  Dataset:
+    type: 'PatchDataset'
+    root: 'dataset/polyppvt-traindataset/PatchesDataset-IOU-fusion/'
+    transform_list:
+      resize:
+        size: [352, 352]
+      tonumpy: ~
+      normalize:
+        mean: [0.485, 0.456, 0.406]
+        std: [0.229, 0.224, 0.225]
+      totensor: ~
+
+  Dataloader:
+    num_workers: 8
+    pin_memory: True
+
+  Checkpoint:
+    checkpoint_dir: 'checkpoints/UACANet_refine_polyppvt_noaug'
+
+Test:
+  Dataset:
+    type: 'PolypDataset'
+    root: '/home/yassine/projects/BPR/dataset/TestDataset'
+    img_subdir: 'images'
+    dt_path: '/home/yassine/projects/Polyp-PVT/result_map/PolypPVT'
+    datasets: ['CVC-300', 'CVC-ClinicDB', 'Kvasir', 'CVC-ColonDB', 'ETIS-LaribPolypDB']
+    out_size: 352
+    transform_list:
+      tonumpy: ~
+      normalize:
+        mean: [0.485, 0.456, 0.406]
+        std: [0.229, 0.224, 0.225]
+      totensor: ~
+
+  Dataloader:
+    num_workers: 8
+    pin_memory: True
+
+  Checkpoint:
+    checkpoint_dir: 'checkpoints/UACANet_refine_polyppvt_noaug'

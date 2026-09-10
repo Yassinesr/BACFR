@@ -1,0 +1,113 @@
+# UACANet_Refine + FCT on the Polyp-PVT patch dataset (FCT arm).
+#
+# Vanilla UACANet-S architecture (PAA-e / PAA-d / UACA, 4-way deep supervision,
+# weighted BCE+IoU, Res2Net-50, 352x352) with ONE paper-faithful change: the
+# coarse Polyp-PVT mask anchors the initial guidance map that UACA refines
+# residually (paper Sec. 3.1), PLUS flip-consistency training (FCT).
+# Consistency-only: 3 sequential forwards instead of a tripled batch.
+#
+# Trains with PatchDataset (img_dir=image, mask_dir=coarse, ann_dir=GT) via
+# run/Train_patch.py, because the model needs the coarse mask as an input.
+#
+# Train:         CUDA_VISIBLE_DEVICES=0 python run/Train_patch.py --config configs/UACANet_refine_polyppvt_fct_conly.yaml --verbose
+# Test (no-TTA): python run/Test_patches.py   --config configs/UACANet_refine_polyppvt_fct_conly.yaml --pth checkpoints/UACANet_refine_polyppvt_fct_conly/best.pth --dt_path /home/yassine/projects/Polyp-PVT/result_map/PolypPVT
+# Test (TTA):    python run/Test_patch_tta.py --config configs/UACANet_refine_polyppvt_fct_conly.yaml --pth checkpoints/UACANet_refine_polyppvt_fct_conly/best.pth --dt_path /home/yassine/projects/Polyp-PVT/result_map/PolypPVT
+
+Model:
+  name: UACANet_Refine_FCT
+  channels: 32          # UACANet-S
+  output_stride: 32     # UACANet-S
+  pretrained: true
+  guidance_scale: 3.0   # coarse prob -> logit prior; sigmoid(+/-3)=0.95/0.05
+  # --- FCT (flip-consistency training) ---
+  use_flip_consistency: true
+  fct_weight: 0.05
+  fct_warmup_iters: 300
+  fct_use_vflip: true
+  fct_supervise_flips: false  # consistency-only: main loss on original view only
+
+Train:
+  Dataset:
+    type: 'PatchDataset'
+    root: 'dataset/polyppvt-traindataset/PatchesDataset-IOU-fusion/'
+    transform_list:
+      resize:
+        size: [352, 352]
+      random_flip:
+        lr: True
+        ud: True
+      random_rotate:
+        range: [0, 359]
+      random_image_enhance:
+        methods: ['contrast', 'sharpness', 'brightness']
+      tonumpy: ~
+      normalize:
+        mean: [0.485, 0.456, 0.406]
+        std: [0.229, 0.224, 0.225]
+      totensor: ~
+
+  Dataloader:
+    batch_size: 8
+    shuffle: True
+    num_workers: 8
+    pin_memory: False
+
+  Optimizer:
+    type: 'Adam'
+    lr: 1.0e-04
+    weight_decay: 0.0
+    clip: 0.5
+    mixed_precision: False
+
+  Scheduler:
+    type: 'PolyLr'
+    epoch: 20
+    gamma: 0.9
+    minimum_lr: 1.0e-07
+    warmup_iteration: 300
+
+  Checkpoint:
+    checkpoint_epoch: 1
+    checkpoint_dir: 'checkpoints/UACANet_refine_polyppvt_fct_conly'
+
+Eval:
+  Dataset:
+    type: 'PatchDataset'
+    root: 'dataset/polyppvt-traindataset/PatchesDataset-IOU-fusion/'
+    transform_list:
+      resize:
+        size: [352, 352]
+      tonumpy: ~
+      normalize:
+        mean: [0.485, 0.456, 0.406]
+        std: [0.229, 0.224, 0.225]
+      totensor: ~
+
+  Dataloader:
+    num_workers: 8
+    pin_memory: True
+
+  Checkpoint:
+    checkpoint_dir: 'checkpoints/UACANet_refine_polyppvt_fct_conly'
+
+Test:
+  Dataset:
+    type: 'PolypDataset'
+    root: '/home/yassine/projects/BPR/dataset/TestDataset'
+    img_subdir: 'images'
+    dt_path: '/home/yassine/projects/Polyp-PVT/result_map/PolypPVT'
+    datasets: ['CVC-300', 'CVC-ClinicDB', 'Kvasir', 'CVC-ColonDB', 'ETIS-LaribPolypDB']
+    out_size: 352
+    transform_list:
+      tonumpy: ~
+      normalize:
+        mean: [0.485, 0.456, 0.406]
+        std: [0.229, 0.224, 0.225]
+      totensor: ~
+
+  Dataloader:
+    num_workers: 8
+    pin_memory: True
+
+  Checkpoint:
+    checkpoint_dir: 'checkpoints/UACANet_refine_polyppvt_fct_conly'

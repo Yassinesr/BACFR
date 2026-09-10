@@ -124,9 +124,10 @@ class UACA(nn.Module):
         self.conv_out1 = conv(channel, channel, 3, relu=True)
         self.conv_out2 = conv(in_channel + channel, channel, 3, relu=True)
         self.conv_out3 = conv(channel, channel, 3, relu=True)
-        self.conv_out4 = nn.Sequential(conv(channel, channel//2, 3, relu=True),
-                                       conv(channel, 1, 1),
-                                       )
+        # Vanilla UACANet head: single conv(channel -> 1), matching CA/UACAPatch.
+        # (The previous 2-layer version had a channel-count bug: its second conv
+        # expected `channel` inputs but received `channel//2`, crashing UACANet.)
+        self.conv_out4 = conv(channel, 1, 1)
 
     def forward(self, x, map):
         b, c, h, w = x.shape

@@ -1,3 +1,43 @@
+# BACFR — Boundary-Aware Context-Fused Refinement for polyp segmentation
+
+> **⚠ Pipeline-leak correction.** Earlier reported numbers on this codebase
+> (0.8815, 0.8548, 0.9455) were inflated by a data leak: the test
+> pipeline was loading ground-truth masks as the model's image input.
+> Fixed. See `RESULTS.md` for the corrected numbers and the leak's
+> per-dataset effect.
+
+**Corrected headline:** three sanity-checked recipes all converge to
+**0.86–0.87 mean Dice** on the standard 5-set polyp benchmark — a
+refinement ceiling.
+
+| Recipe | Mean Dice |
+|---|---:|
+| BACFR refining PraNet preds (pranet-trained) | ~0.86 |
+| BACFR refining Polyp-PVT preds (pranet-trained) | 0.8723 |
+| BACFR refining Polyp-PVT preds (polyppvt-trained) | 0.8726 |
+
+vs published baselines:
+- **+0.05** over published BPR (0.807) on the comparable recipe.
+- Within **+0.003** of raw published Polyp-PVT (0.870).
+
+BACFR's contribution is real but bounded: weak base segmenters get
+**+0.05** from refinement; near-saturated bases (Polyp-PVT) hit the
+same ~0.87 ceiling and refinement adds essentially nothing. The
+benchmark appears to have a structural ceiling around 0.87 that the
+patch-refinement paradigm cannot break in its current form.
+
+See [**RESULTS.md**](./RESULTS.md) for the full per-dataset table, the
+leak's effect, the ceiling analysis, and reproduction commands.
+
+Model: `lib/BACFR_Enhanced_v3_3.py`. Training: `run/Train_patch.py`.
+Inference + TTA: `run/Test_patch_tta.py`. See `RESULTS.md` for commands.
+
+This repository is forked from UACANet (the original README follows
+below); the backbone, loss, and patch-cropping infrastructure are reused
+from there.
+
+---
+
 # UACANet: Uncertainty Augmented Context Attention for Polyp Segmentation
 
 [![PWC](https://img.shields.io/endpoint.svg?url=https://paperswithcode.com/badge/uacanet-uncertainty-augmented-context/medical-image-segmentation-on-cvc-colondb)](https://paperswithcode.com/sota/medical-image-segmentation-on-cvc-colondb?p=uacanet-uncertainty-augmented-context)
