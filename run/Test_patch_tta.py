@@ -29,6 +29,35 @@ from lib import *
 # TTA wrapper — the only new piece vs Test_patch.py
 # ==============================================================
 @torch.no_grad()
+def single_view_predict(model, sample, view):
+    """DIAGNOSTIC: predict from ONE flipped view and un-flip the result.
+
+    The whole-image counterpart of this measurement showed the Polyp-PVT
+    backbone losing 0.023 mean Dice per flipped view -- a real equivariance
+    gap, traced to its stem sampling on a grid that is flush to one edge.
+
+    The patch refiner is expected to show almost NO gap, because its output is
+    anchored on the coarse mask (pred = coarse_logit + residuals) and the
+    anchor is unaffected by which way round the patch went in. If that holds,
+    it is the direct evidence for why FCT and flip-TTA are both inert here:
+    there is no variance for TTA to average and no non-equivariance for the
+    consistency term to remove.
+
+    A near-zero gap here beside the -0.023 measured on whole images is the
+    entire patch-vs-whole-image story in two numbers.
+    """
+    dims = {'h': [3], 'v': [2], 'hv': [2, 3]}[view]
+    s = to_cuda({'image': torch.flip(sample['image'], dims=dims),
+                 'mask':  torch.flip(sample['mask'], dims=dims)})
+    return torch.flip(torch.sigmoid(model(s)['pred']), dims=dims)
+
+
+def plain_predict(model, sample):
+    """No flips at all -- the reference the single views are compared against."""
+    s = to_cuda({'image': sample['image'], 'mask': sample['mask']})
+    return torch.sigmoid(model(s)['pred'])
+
+
 def tta_predict(model, sample):
     """Run 4 flip variants, average sigmoid outputs.
 
@@ -151,7 +180,7 @@ def merge(maskdts, detss, maskss, patch_size=64):
 # ==============================================================
 # Test loop (only change vs Test_patch.py: tta_predict instead of model())
 # ==============================================================
-def test(opt, args, out_dir, pth, dt_path):
+def test(opt, args, out_dir, pth, dt_path, single_view='none'):
     os.makedirs(out_dir, exist_ok=True)
     # Patch model-input resolution. MUST match the training resize (UACANet
     # configs train at 352, so set Test.Dataset.out_size: 352); default 256
@@ -208,7 +237,12 @@ def test(opt, args, out_dir, pth, dt_path):
                 # >>> THE TTA CHANGE: replace single forward with 4-flip average <
                 s = {'image': img_patches[i:i + 8],
                      'mask':  dt_patches[i:i + 8]}
-                pred = tta_predict(model, s)        # (B, 1, 256, 256), already sigmoid
+                if single_view == 'none':
+                    pred = tta_predict(model, s)    # (B, 1, 256, 256), already sigmoid
+                elif single_view == 'plain':
+                    pred = plain_predict(model, s)
+                else:
+                    pred = single_view_predict(model, s, single_view)
                 pred = pred.squeeze(1)
                 refinemasks_final += pred.tolist()
                 # >>> END TTA CHANGE <
@@ -255,6 +289,12 @@ if __name__ == '__main__':
                             'Test.Checkpoint.checkpoint_dir')
     extra.add_argument('--out_dir', type=str, default=None,
                        help='output directory; default: results_cl/<ckpt_dir_basename>_TTA')
+    extra.add_argument('--single_view', type=str, default='none',
+                       choices=['none', 'h', 'v', 'hv', 'plain'],
+                       help='DIAGNOSTIC. Instead of averaging 4 views, predict from '
+                            'ONE flipped view and un-flip it (h/v/hv), or from no '
+                            'flip at all (plain). The drop versus plain IS the '
+                            'equivariance gap that TTA averages over.')
     extra.add_argument('--dt_path', type=str, default=None,
                        help='coarse-mask source root (must contain per-testset subdirs)')
     extra_args, _ = extra.parse_known_args()
@@ -296,7 +336,10 @@ if __name__ == '__main__':
             model_kwargs[_k] = getattr(opt.Model, _k)
     model = eval(opt.Model.name)(**model_kwargs)
 
-    print(f"Running TTA inference: {pth} -> {out_dir}")
+    if extra_args.single_view != 'none':
+        print(f"DIAGNOSTIC single_view={extra_args.single_view}: {pth} -> {out_dir}")
+    else:
+        print(f"Running TTA inference: {pth} -> {out_dir}")
     print(f"  coarse-mask source: {dt_path}")
-    test(opt, args, out_dir, pth, dt_path)
+    test(opt, args, out_dir, pth, dt_path, single_view=extra_args.single_view)
     print("Done. Now run your eval script on this folder.")
