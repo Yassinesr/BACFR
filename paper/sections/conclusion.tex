@@ -1,0 +1,13 @@
+\section{Conclusion}
+\label{sec:conclusion}
+
+We asked which view should teach when a segmentation network is trained to agree with itself under
+flips. For binary labels, an identity answers it: a consistency pull toward a detached teacher view is
+the supervised pull, rescaled by one minus the ratio of the two views' errors. The pull therefore moves
+the student toward the label only where the teacher is closer to it. We turned this lag condition into
+FCT, which supervises an image and its two flips and lets a view teach another only where the label
+allows it, with a constant fixed by the decision threshold. FCT improved the five-set mean Dice of
+Polyp-PVT and PraNet-V2 on every seed and gained most on the unseen ETIS set. It also made the
+predictions more flip-consistent and left inference unchanged. Future work will extend the identity to
+multi-class segmentation and to other transformations, such as rotations, and test FCT itself on the
+six PolypGen centres, where a label-aware variant already improves on every seed.

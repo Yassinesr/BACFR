@@ -1,0 +1,99 @@
+\section{Introduction}
+\label{sec:intro}
+
+Polyp segmentation networks that are accurate on their training data lose much of that accuracy
+at new centres, whose images differ in endoscopes, illumination and
+patients~\cite{ali2023polypgen,ali2024endocv}. This gap limits their clinical value: colorectal
+cancer is among the leading causes of cancer death~\cite{siegel2024cancer}, and automatic
+segmentation aims to help endoscopists, who miss about one in five
+polyps~\cite{vanrijn2006miss}. Recent networks reach high Dice on test images from their
+training datasets~\cite{fan2020pranet,wei2021sanet,dong2023polyppvt,hu2026pranetv2,sun2026asgnet},
+but much lower Dice elsewhere. In our experiments, for example, Polyp-PVT~\cite{dong2023polyppvt}
+reaches 93.2\% mean Dice on \mbox{CVC-ClinicDB} but only 78.6\% on ETIS, a dataset from another
+hospital. For clinical use, closing this gap matters more than further gains on the training
+distribution.
+
+Polyp segmentation also has a symmetry that standard training does not enforce. A mirrored
+polyp is still a polyp, so the correct mask of a mirrored image is the mirrored mask. We measure
+departures from this flip equivariance with the flip gap: one minus the Dice overlap between the
+binary masks predicted for an image and for its flipped copy, once flipped back, averaged over
+horizontal and vertical flips. As Fig.~\ref{fig:teaser} shows, the flip gap of trained models
+is far from zero, and it is largest on the two hardest test sets, \mbox{CVC-ColonDB} and ETIS.
+We hypothesize that a model whose answer changes with a mirror image relies partly on cues that
+do not belong to the polyp, and that such cues are unlikely to transfer to new centres.
+
+\begin{figure*}[t]
+\centering
+\includegraphics[width=\textwidth]{figures/fig1_flipgap.pdf}
+\caption{Flip gap (left; one minus the Dice overlap between the binary masks predicted for an
+image and for its flipped copy, once flipped back, averaged over horizontal and vertical flips)
+and mDice (right) on five test sets, without (hollow) and with (filled) FCT. Both networks are
+least flip-consistent on \mbox{CVC-ColonDB} and ETIS, the two sets where they are least
+accurate. FCT lowers the flip gap on every set, and its largest mDice gain, for both networks,
+is on ETIS. Means over six seeds.}
+\label{fig:teaser}
+\end{figure*}
+
+Two remedies are common. Flip augmentation trains on mirrored copies with mirrored labels, but
+each copy is constrained only by its own label, never by the prediction on its mirror.
+Consistency regularization adds that constraint by penalizing disagreement between the
+predictions on the views. It comes from semi-supervised learning, where agreement between views
+is the only signal that unlabeled images
+provide~\cite{laine2017temporal,tarvainen2017mean,sohn2020fixmatch}, and medical variants
+enforce it under spatial transformations~\cite{bortsova2019consistency,li2021tcsm}. Since no
+label says which view is right, the views are treated as equally reliable or weighed by the
+model's own confidence. Supervised uses of consistency, such as AugMix~\cite{hendrycks2020augmix}
+and R-Drop~\cite{liang2021rdrop}, keep this symmetry even though the label is known, so a
+correct view can be pulled toward a wrong one.
+
+We show that, under full supervision, the label settles which view should teach. For binary
+segmentation with a cross-entropy consistency loss toward a detached teacher view, the gradient
+on the student equals the supervised gradient scaled by one minus the ratio of the teacher's
+error to the student's. Similar decompositions of the distillation gradient are known for
+classification~\cite{furlanello2018born,tang2020understanding}; here we apply the identity pixel
+by pixel, across views of one image. A consistency pull is therefore a reweighted supervised
+pull: it moves the student toward the label where the teacher is closer to it, and away from the
+label where the student is closer. Unweighted consistency mixes both kinds of pulls in every
+image, and only the label can tell them apart.
+
+Building on this identity, we propose label-aware flip-consistency training (FCT). Each image is
+presented upright, flipped horizontally and flipped vertically, and all three views are
+supervised. Each flipped view is pulled toward the upright view at full strength wherever it lags
+behind it. Where it leads, the pull is kept only if the upright view is correct, scaled by how
+far the upright prediction lies on the correct side of the 0.5 threshold; this weak pull keeps
+the views consistent without moving either across the threshold, much as label smoothing tempers
+overconfident targets~\cite{yuan2020revisiting}. The upright view, in turn, learns from the
+flipped view closest to the label wherever that view is more accurate. The rule's single
+constant is set by the decision threshold rather than tuned, and FCT changes only the training
+objective: it multiplies the training time by about 3.5 and adds nothing at inference. To the
+best of our knowledge, FCT is the first rule that uses the label to decide, pixel by pixel and
+across views of one network, which view teaches.
+
+We add FCT, without retuning, to \pend{three} segmentation networks of different design:
+Polyp-PVT~\cite{dong2023polyppvt}, built on a pyramid vision transformer;
+PraNet-V2~\cite{hu2026pranetv2}, a convolutional network with dual-supervised reverse attention;
+\pend{and ASGNet~\cite{sun2026asgnet}, which guides its features with spectral cues}. Each
+network is trained with and without FCT under six paired random seeds and tested on five public
+test sets, three of which are unseen in training. FCT improves the five-set mean Dice on every
+seed \pend{for every network}. The largest gains are on ETIS, +1.65 and +3.61 points for
+Polyp-PVT and PraNet-V2, and on \mbox{CVC-ColonDB} for PraNet-V2, +3.01 points, all with paired
+95\% confidence intervals above zero. FCT also lowers the five-set mean flip gap by 40\% and
+34\%, respectively. On six more centres from the PolypGen benchmark~\cite{ali2023polypgen}, a
+label-aware variant improves the pooled Dice on every seed \pend{(FCT itself is pending)}. A
+component-by-component dissection relates these gains to the three
+supervised views, the pulls, their weight and the upright pull \pend{(four of its rows are still
+running)}.
+
+Our contributions are summarized as follows:
+\begin{itemize}
+\item We show that, in binary segmentation under full supervision, a cross-entropy consistency
+loss between two views acts, pixel by pixel, as a reweighted supervised loss whose direction
+depends on which view is closer to the label.
+\item We derive from this identity FCT, a label-aware flip-consistency rule whose single
+constant is set by the decision threshold. It plugs into any binary segmentation network and
+adds no cost at inference.
+\item We evaluate FCT on two architectures \pend{(three with ASGNet)}, five test sets and six
+paired seeds with confidence intervals, and dissect it component by component. It raises the
+five-set mean Dice of both networks on every seed, most on ETIS, and makes predictions markedly
+more flip-consistent.
+\end{itemize}

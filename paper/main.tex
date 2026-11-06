@@ -1,0 +1,68 @@
+\documentclass[journal]{IEEEtran}
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{amsmath,amssymb}
+\usepackage{xcolor}
+\usepackage{graphicx}
+\usepackage{cite}
+\usepackage{booktabs}
+\usepackage{threeparttable}
+\usepackage{tikz}
+\usetikzlibrary{arrows.meta,positioning,calc,fit,backgrounds}
+\usepackage[hidelinks]{hyperref}
+
+\newtheorem{proposition}{Proposition}
+\newtheorem{corollary}{Corollary}
+
+% Red marks text that waits on runs still in progress (ASGNet) or on a decision.
+% Remove the colour before submission.
+\newcommand{\pend}[1]{\textcolor{red}{#1}}
+
+\begin{document}
+
+\title{Which View Should Teach? Label-Aware Flip Consistency for Generalizable Polyp Segmentation}
+\author{\pend{Authors}}
+\maketitle
+
+\begin{abstract}
+Polyp segmentation networks lose accuracy on centres unseen in training. A mirrored
+polyp is still a polyp, so a reliable model should predict the mirrored mask for a
+mirrored image; we observe that trained models do not, and are least flip-consistent on
+the hardest test sets. Flip consistency regularization is a natural remedy, but it comes
+from semi-supervised learning, where no label says which view is correct. We show that,
+in binary segmentation with labels available, a cross-entropy consistency pull toward a
+teacher view is a reweighted supervised pull: it moves the student view toward the label
+only where the teacher is closer to it. Building on this identity, we propose label-aware
+flip-consistency training (FCT), in which each view is pulled at full strength only
+toward a more accurate view, and never toward a misclassification it has avoided. The
+rule's one constant is set by the decision threshold rather than tuned, and FCT leaves
+the network and its inference unchanged. Experiments on five public benchmarks, each repeated over six random seeds, show that
+FCT improves the five-set mean Dice of Polyp-PVT and PraNet-V2 on every seed
+\pend{[ASGNet: pending]} and markedly reduces flip inconsistency. Notably, on the unseen ETIS dataset, FCT improves PraNet-V2 by 3.6 Dice
+points. \pend{Code is available at [URL].}
+\end{abstract}
+
+\begin{IEEEkeywords}
+Polyp segmentation, domain generalization, consistency regularization, flip equivariance,
+self-distillation.
+\end{IEEEkeywords}
+
+\input{sections/introduction}
+\input{sections/related}
+\input{sections/analysis}
+\input{sections/method}
+\input{sections/experiments}
+\input{sections/discussion}
+\input{sections/conclusion}
+
+% ASGNet's main table, when all six seeds finish (it overwrites the placeholder tables/main_asgnet.tex).
+% make_table.py needs a summary over seeds 1-6, so score them together first, in the Polyp-PVT repo:
+%   python seed_summary.py --seeds 1 2 3 4 5 6 --arms ASGNET_VANILLA ASGNET_S3LMUP > seeds_asgnet.out
+%   python tables/make_table.py <repo>/seeds_asgnet.out ASGNET_VANILLA ASGNET_S3LMUP ASGNet PVTv2-B3 tab:main_asgnet tables/main_asgnet.tex
+
+\input{sections/appendix}
+
+\bibliographystyle{IEEEtran}
+\bibliography{references}
+
+\end{document}

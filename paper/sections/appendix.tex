@@ -1,0 +1,21 @@
+\appendices
+
+\section{Per-Seed Results}
+\label{app:perseed}
+
+Table~\ref{tab:perseed} lists the mDice of every run behind Tables~\ref{tab:main_polyppvt}
+and~\ref{tab:main_pranetv2}. FCT scores higher than vanilla with the same seed on the five-set mean
+for all twelve pairs, and on ETIS for eleven of them.
+
+\input{tables/tab_perseed}
+
+\section{Gains Without Epoch Selection}
+\label{app:selfree}
+
+Table~\ref{tab:selfree} repeats the comparison of Section~\ref{sec:main} without epoch selection,
+with the evaluator that runs during training. At the last epoch, the ETIS gain of Polyp-PVT is the only
+entry of the table whose CI excludes zero; averaged over the last ten epochs, the gains on the five-set mean and on ETIS are
+positive for both networks, and their CIs exclude zero except for the five-set mean of Polyp-PVT.
+For PraNet-V2, the last epoch lies well past the peak of both arms (Fig.~\ref{fig:curves}).
+
+\input{tables/tab_selfree}

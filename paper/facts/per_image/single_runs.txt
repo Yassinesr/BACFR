@@ -1,0 +1,53 @@
+
+Expr - S3
+dataset             meanDic  meanIoU      n
+Kvasir               0.9229   0.8769    100
+CVC-ClinicDB         0.9210   0.8741     62
+CVC-ColonDB          0.7993   0.7227    380
+CVC-300              0.8770   0.8096     60
+ETIS-LaribPolypDB    0.8078   0.7315    196
+
+Expr - S3F
+dataset             meanDic  meanIoU      n
+Kvasir               0.9256   0.8764    100
+CVC-ClinicDB         0.9318   0.8835     62
+CVC-ColonDB          0.8028   0.7227    380
+CVC-300              0.8878   0.8214     60
+ETIS-LaribPolypDB    0.8049   0.7272    196
+
+Expr - PVT_AUG
+dataset             meanDic  meanIoU      n
+Kvasir               0.9139   0.8590    100
+CVC-ClinicDB         0.9075   0.8526     62
+CVC-ColonDB          0.7952   0.7108    380
+CVC-300              0.8904   0.8239     60
+ETIS-LaribPolypDB    0.7805   0.6985    196
+
+Expr - PVT_AUG_FCT
+dataset             meanDic  meanIoU      n
+Kvasir               0.9046   0.8459    100
+CVC-ClinicDB         0.9053   0.8462     62
+CVC-ColonDB          0.7861   0.7049    380
+CVC-300              0.8829   0.8146     60
+ETIS-LaribPolypDB    0.8045   0.7216    196
+
+Expr - PVT_VANILLA_s1
+dataset             meanDic  meanIoU      n
+Kvasir               0.9204   0.8701    100
+CVC-ClinicDB         0.9327   0.8867     62
+CVC-ColonDB          0.7941   0.7137    380
+CVC-300              0.8847   0.8163     60
+ETIS-LaribPolypDB    0.7860   0.7055    196
+
+meanDic                     Kvasir ClinicDB  ColonDB  CVC-300     ETIS     mean
+S3                          0.9229   0.9210   0.7993   0.8770   0.8078   0.8656
+S3F                         0.9256   0.9318   0.8028   0.8878   0.8049   0.8706
+PVT_AUG                     0.9139   0.9075   0.7952   0.8904   0.7805   0.8575
+PVT_AUG_FCT                 0.9046   0.9053   0.7861   0.8829   0.8045   0.8567
+PVT_VANILLA_s1              0.9204   0.9327   0.7941   0.8847   0.7860   0.8636
+
+difference to PVT_VANILLA_s1 (sets won: higher by >= 0.0001 after rounding; goal: all 5 won, one by >= 0.001)
+S3                         +0.0025  -0.0117  +0.0052  -0.0077  +0.0218  +0.0020   won 3/5
+S3F                        +0.0052  -0.0009  +0.0087  +0.0031  +0.0189  +0.0070   won 4/5
+PVT_AUG                    -0.0065  -0.0252  +0.0011  +0.0057  -0.0055  -0.0061   won 2/5
+PVT_AUG_FCT                -0.0158  -0.0274  -0.0080  -0.0018  +0.0185  -0.0069   won 1/5

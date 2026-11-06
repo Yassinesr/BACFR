@@ -1,0 +1,94 @@
+\section{Related Work}
+\label{sec:related}
+
+\subsection{Polyp Segmentation and Generalization}
+
+Deep polyp segmentation has advanced mainly through network design.
+PraNet~\cite{fan2020pranet} aggregates high-level features with a parallel partial decoder and
+refines boundaries with reverse attention. SANet~\cite{wei2021sanet} adds shallow attention and
+colour exchange, and UACANet~\cite{kim2021uacanet} attends to the uncertain region of each
+prediction. Later networks adopt transformer encoders, as Polyp-PVT~\cite{dong2023polyppvt} and
+ASGNet~\cite{sun2026asgnet} do, the latter guiding its features with spectral information, or
+add supervision, as PraNet-V2~\cite{hu2026pranetv2} does with dual-supervised reverse attention.
+Other recent designs add contrastive transformer modules~\cite{xiao2024ctnet}, boundary-sensitive
+attention~\cite{shao2024polyper} or uncertainty modeling~\cite{du2025umnet}, or adapt the Segment
+Anything Model with a convolutional branch~\cite{li2024asps}. Closest to our motivation,
+VANet~\cite{cai2024vanet} observes that steering the colonoscope tip changes the viewpoint and the
+appearance of polyps, and handles this with viewpoint-aware modules. These networks change the
+architecture, whereas FCT changes only the training loss, so it complements rather than replaces
+them.
+
+Most of these models follow the protocol of~\cite{fan2020pranet}: they train on
+Kvasir-SEG~\cite{jha2020kvasir} and CVC-ClinicDB~\cite{bernal2015clinicdb}, and they are tested
+on these two datasets and on CVC-ColonDB~\cite{tajbakhsh2016colondb},
+CVC-300~\cite{vazquez2017endoscene} and ETIS~\cite{silva2014etis}, which are unseen in training.
+Accuracy on the unseen sets stays well below that on the seen ones, and multi-centre benchmarks
+confirm the gap at scale~\cite{ali2023polypgen,ali2024endocv}. Domain generalization offers
+training-side remedies~\cite{zhou2023dgsurvey}, such as shape-aware
+meta-learning~\cite{liu2020saml} and frequency-space interpolation across
+sites~\cite{liu2021feddg}. For polyps, randomized global illumination
+augmentation~\cite{zhang2024illumination} and colour transfer~\cite{du2025umnet} target nuisance
+factors that vary across centres, and domain adaptation learns from unlabeled images of the target
+domain~\cite{lu2025dclps}. These methods diversify the training data, learn from differences
+between domains or need target images, whereas FCT adds a constraint between views of each training
+image and needs no target data, so the approaches are complementary.
+
+\subsection{Consistency Regularization and Equivariance}
+
+Consistency regularization asks a network to agree with itself across perturbed views of an
+input. It was developed for semi-supervised learning, where unlabeled images provide only this
+signal: the $\Pi$-model and temporal ensembling~\cite{laine2017temporal}, mean
+teachers~\cite{tarvainen2017mean}, unsupervised data augmentation~\cite{xie2020uda} and
+FixMatch~\cite{sohn2020fixmatch}. FixMatch keeps only pseudo-labels whose confidence exceeds a
+threshold, a proxy for correctness when the true label is unknown. Semi-supervised segmentation
+methods perturb inputs, features or networks~\cite{ouali2020cct,chen2021cps,yang2023unimatch}.
+In medical imaging, consistency under spatial transformations exploits the equivariance of
+segmentation on unlabeled scans~\cite{bortsova2019consistency,li2021tcsm}, or its invariance to
+the surrounding context~\cite{liu2025tracoco}. Mean teachers restrict consistency to reliable
+regions~\cite{yu2019uamt} or to ambiguous ones~\cite{xu2023acmt}, bidirectional patch displacement
+builds new samples for consistency learning guided by prediction confidence~\cite{chi2024abd}, and
+semi-supervised polyp segmentation aligns the affinity maps of a student and a
+teacher~\cite{wu2023aclnet}.
+
+With labels available, consistency also serves as a regularizer: AugMix~\cite{hendrycks2020augmix}
+matches predictions across augmentation chains, and R-Drop~\cite{liang2021rdrop} across dropout
+masks. A sample-efficiency analysis shows that, with label-invariant augmentations, consistency
+regularization learns from fewer samples than training on the augmented copies with their
+labels~\cite{yang2023dac}. Flip and rotation augmentation, by contrast, supervises each transformed copy with its own
+transformed label and does not relate the predictions on different copies. Equivariance can also
+be built into the architecture~\cite{cohen2016gcnn,veeling2018rotation}, enforced on class
+activation maps in weakly supervised segmentation~\cite{wang2020seam}, or approximated at test
+time by averaging predictions over transformed inputs~\cite{wang2019tta}, at the price of a
+constrained architecture or a multiplied inference cost. All these methods treat the views as
+equally reliable or weigh them by the model's own confidence, since none uses the label to
+compare views; under full supervision, FCT does exactly that.
+
+\subsection{Self-Distillation and Label-Aware Weighting}
+
+Knowledge distillation trains a student to match the soft predictions of a
+teacher~\cite{hinton2015distilling}. In self-distillation, the teacher is the model itself: an
+earlier generation of the same architecture~\cite{furlanello2018born}, its own deeper
+layers~\cite{zhang2019byot}, its predictions from the previous epoch~\cite{kim2021pskd} or
+dropout-sampled versions of itself~\cite{lee2023sddropout}.
+Closest to our setting, data-distortion guided self-distillation~\cite{xu2019ddgsd} makes a
+network agree with itself on two distorted copies of an image under full supervision, treating
+both copies alike. The consistency term of FCT is also self-distillation across views, but it
+compares teacher and student against the label, pixel by pixel.
+
+Several works relate distillation to the ground truth. Analyses of the distillation gradient
+show that it rescales the supervised gradient according to the teacher's confidence in the true
+class~\cite{furlanello2018born,tang2020understanding}, self-distillation over several rounds
+averages the labels of instances with correlated features~\cite{jeong2025selfdistill}, and Yuan et
+al.~\cite{yuan2020revisiting} relate distillation to label smoothing. Decoupled knowledge
+distillation~\cite{zhao2022dkd} splits the loss exactly into target-class and non-target-class
+terms, knowledge adjustment~\cite{wen2021preparing}, refined logits~\cite{sun2025rld} and label
+revision~\cite{lan2025labelrevision} correct teacher predictions that contradict the label, and confidence-aware multi-teacher distillation~\cite{zhang2022camkd} weights each
+teacher by how close its predictions are to the label. For segmentation, structured distillation
+transfers pixel-wise and pairwise knowledge from a large network to a compact
+one~\cite{liu2019skd}. Loss reweighting also changes how much
+each example counts: focal loss~\cite{lin2017focal} and online hard example
+mining~\cite{shrivastava2016ohem} emphasize examples with high loss, and the structure loss used
+by PraNet-style networks emphasizes pixels near boundaries~\cite{wei2020f3net}. By our identity,
+FCT belongs to this family: it reweights the supervised gradient of each pixel, but by how the
+pixel's error compares with that of another view of the same pixel, within one network rather
+than across separate teachers.

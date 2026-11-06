@@ -1,0 +1,12 @@
+Kvasir 100 images
+CVC-ClinicDB 62 images
+CVC-ColonDB 380 images
+CVC-300 60 images
+ETIS-LaribPolypDB 196 images
+PolypGen_C1 251 images, missing 0
+PolypGen_C2 270 images, missing 0
+PolypGen_C3 455 images, missing 0
+PolypGen_C4 146 images, missing 0
+PolypGen_C5 206 images, missing 0
+PolypGen_C6 83 images, missing 0
+wrote /home/user/BACFR/paper/facts/full_precision.json

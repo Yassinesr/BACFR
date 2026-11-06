@@ -1,0 +1,24 @@
+{
+ "Polyp-PVT": {
+  "epochs": 99,
+  "fct_above": 81,
+  "mean_gap_all_epochs": 0.4696944548352031,
+  "peak_epoch_van": 28,
+  "peak_epoch_fct": 55,
+  "peak_van": 86.11757626096733,
+  "peak_fct": 86.58633358600034,
+  "last_van": 85.62298527963534,
+  "last_fct": 86.17704358838725
+ },
+ "PraNet-V2": {
+  "epochs": 29,
+  "fct_above": 28,
+  "mean_gap_all_epochs": 1.9509032166185365,
+  "peak_epoch_van": 11,
+  "peak_epoch_fct": 6,
+  "peak_van": 79.37350562770213,
+  "peak_fct": 80.76850393337413,
+  "last_van": 75.4746367669943,
+  "last_fct": 75.96051829485388
+ }
+}

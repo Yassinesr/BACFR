@@ -1,0 +1,93 @@
+Kvasir: 100 images
+ClinicDB: 62 images
+ColonDB: 380 images
+CVC-300: 60 images
+ETIS: 196 images
+
+1. SCORES  meanDic (mean Dice over 256 thresholds, as in the Polyp-PVT paper)
+                    Kvasir ClinicDB  ColonDB  CVC-300     ETIS     mean
+  PVT_VANILLA_s1    0.9204   0.9327   0.7941   0.8847   0.7860   0.8636
+  PVT_VANILLA_s2    0.9100   0.9397   0.8078   0.8900   0.7831   0.8661
+  PVT_VANILLA_s3    0.9238   0.9215   0.8103   0.8733   0.7871   0.8632
+  PVT_VANILLA_s4    0.9270   0.9347   0.7990   0.8886   0.7869   0.8672
+  PVT_VANILLA_s5    0.9185   0.9345   0.7974   0.8991   0.7829   0.8665
+  PVT_VANILLA_s6    0.9164   0.9271   0.8079   0.8915   0.7908   0.8667
+  S3LMUP_s1         0.9202   0.9350   0.8043   0.8697   0.7976   0.8653
+  S3LMUP_s2         0.9270   0.9325   0.7988   0.8827   0.8128   0.8708
+  S3LMUP_s3         0.9279   0.9369   0.8101   0.8991   0.8011   0.8750
+  S3LMUP_s4         0.9208   0.9309   0.8127   0.8884   0.7957   0.8697
+  S3LMUP_s5         0.9302   0.9347   0.7985   0.8969   0.8008   0.8722
+  S3LMUP_s6         0.9237   0.9314   0.8012   0.8940   0.8077   0.8716
+
+2-3. FCT (6 runs) vs vanilla (6 runs) on meandic; p-values are exact over 924 labellings (smallest possible p 0.001)
+
+== Kvasir  (100 images; vanilla 0.9194, FCT 0.9250, gap +0.0056, permutation p 0.084)
+  from: 10 worst images -0.0049, 10 best images +0.0086, the other 80 +0.0020
+  by polyp size (quarters of the set): smallest +0.0078 (p 0.045), small +0.0071 (p 0.232), large -0.0010 (p 0.846), largest +0.0087 (p 0.338)
+  images where every FCT run < every vanilla run: 1 (p 0.102);  every FCT run > every vanilla run: 1 (p 0.102)
+  at 0.5: missed polyp area 0.079 vs 0.076, false-positive area 0.074 vs 0.064 (vanilla vs FCT, fraction of polyp area); complete misses per run 0.0 vs 0.0
+
+== ClinicDB  (62 images; vanilla 0.9317, FCT 0.9336, gap +0.0019, permutation p 0.537)
+  from: 10 worst images -0.0036, 10 best images +0.0046, the other 42 +0.0009
+  by polyp size (quarters of the set): smallest +0.0032 (p 0.768), small +0.0008 (p 0.576), large +0.0006 (p 0.260), largest +0.0027 (p 0.368)
+  images where every FCT run < every vanilla run: 2 (p 0.006);  every FCT run > every vanilla run: 0 (p 1.000)
+  at 0.5: missed polyp area 0.053 vs 0.050, false-positive area 0.129 vs 0.115 (vanilla vs FCT, fraction of polyp area); complete misses per run 0.0 vs 0.0
+
+== ColonDB  (380 images; vanilla 0.8028, FCT 0.8043, gap +0.0015, permutation p 0.684)
+  from: 10 worst images -0.0063, 10 best images +0.0067, the other 360 +0.0012
+  by polyp size (quarters of the set): smallest -0.0175 (p 0.344), small -0.0069 (p 0.310), large +0.0110 (p 0.052), largest +0.0195 (p 0.331)
+  images where every FCT run < every vanilla run: 1 (p 0.293);  every FCT run > every vanilla run: 5 (p 0.005)
+  at 0.5: missed polyp area 0.175 vs 0.163, false-positive area 0.657 vs 0.734 (vanilla vs FCT, fraction of polyp area); complete misses per run 15.0 vs 15.3
+  10 images where FCT loses most (FCT mean - vanilla mean):
+    267                      polyp   0.9%  vanilla 0.879 0.885 0.880 0.907 0.871 0.831  FCT 0.561 (0.257-0.871)  below every vanilla run in 4/6 FCT runs  FCT misses 0  FCT error: false pos
+    366                      polyp   1.1%  vanilla 0.778 0.755 0.728 0.747 0.766 0.130  FCT 0.361 (0.122-0.790)  below every vanilla run in 2/6 FCT runs  FCT misses 0  FCT error: false pos
+    208                      polyp   0.5%  vanilla 0.738 0.859 0.835 0.834 0.840 0.868  FCT 0.575 (0.190-0.813)  below every vanilla run in 4/6 FCT runs  FCT misses 0  FCT error: false pos
+    316                      polyp  18.0%  vanilla 0.732 0.799 0.723 0.706 0.508 0.774  FCT 0.459 (0.026-0.708)  below every vanilla run in 2/6 FCT runs  FCT misses 2  FCT error: missed
+    351                      polyp   0.8%  vanilla 0.757 0.000 0.368 0.546 0.823 0.689  FCT 0.311 (0.023-0.796)  below every vanilla run in 0/6 FCT runs  FCT misses 1  FCT error: false pos
+    339                      polyp  33.6%  vanilla 0.628 0.974 0.973 0.965 0.625 0.967  FCT 0.638 (0.401-0.906)  below every vanilla run in 3/6 FCT runs  FCT misses 0  FCT error: missed
+    250                      polyp   2.8%  vanilla 0.850 0.871 0.883 0.854 0.821 0.865  FCT 0.640 (0.427-0.915)  below every vanilla run in 4/6 FCT runs  FCT misses 0  FCT error: false pos
+    253                      polyp   2.8%  vanilla 0.850 0.871 0.883 0.854 0.821 0.865  FCT 0.640 (0.427-0.915)  below every vanilla run in 4/6 FCT runs  FCT misses 0  FCT error: false pos
+    259                      polyp   2.8%  vanilla 0.850 0.871 0.883 0.854 0.821 0.865  FCT 0.640 (0.427-0.915)  below every vanilla run in 4/6 FCT runs  FCT misses 0  FCT error: false pos
+    262                      polyp   2.8%  vanilla 0.850 0.871 0.883 0.854 0.821 0.865  FCT 0.640 (0.427-0.915)  below every vanilla run in 4/6 FCT runs  FCT misses 0  FCT error: false pos
+
+== CVC-300  (60 images; vanilla 0.8879, FCT 0.8885, gap +0.0006, permutation p 0.916)
+  from: 10 worst images -0.0083, 10 best images +0.0067, the other 40 +0.0021
+  by polyp size (quarters of the set): smallest -0.0238 (p 0.100), small +0.0030 (p 0.035), large +0.0051 (p 0.201), largest +0.0181 (p 0.110)
+  images where every FCT run < every vanilla run: 0 (p 1.000);  every FCT run > every vanilla run: 1 (p 0.065)
+  at 0.5: missed polyp area 0.058 vs 0.055, false-positive area 0.231 vs 0.267 (vanilla vs FCT, fraction of polyp area); complete misses per run 0.2 vs 0.0
+
+== ETIS  (196 images; vanilla 0.7861, FCT 0.8026, gap +0.0165, permutation p 0.002)
+  from: 10 worst images -0.0092, 10 best images +0.0178, the other 176 +0.0079
+  by polyp size (quarters of the set): smallest +0.0546 (p 0.017), small +0.0052 (p 0.729), large -0.0002 (p 0.981), largest +0.0063 (p 0.152)
+  images where every FCT run < every vanilla run: 1 (p 0.183);  every FCT run > every vanilla run: 1 (p 0.183)
+  at 0.5: missed polyp area 0.115 vs 0.107, false-positive area 1.523 vs 1.307 (vanilla vs FCT, fraction of polyp area); complete misses per run 10.5 vs 10.3
+  10 images where FCT loses most (FCT mean - vanilla mean):
+    147                      polyp   1.6%  vanilla 0.896 0.836 0.946 0.912 0.850 0.946  FCT 0.584 (0.000-0.938)  below every vanilla run in 3/6 FCT runs  FCT misses 2  FCT error: missed
+    149                      polyp   1.2%  vanilla 0.898 0.758 0.820 0.924 0.830 0.917  FCT 0.597 (0.161-0.786)  below every vanilla run in 5/6 FCT runs  FCT misses 0  FCT error: false pos
+    151                      polyp   1.0%  vanilla 0.939 0.924 0.970 0.959 0.927 0.933  FCT 0.731 (0.000-0.946)  below every vanilla run in 4/6 FCT runs  FCT misses 1  FCT error: missed
+    31                       polyp   3.3%  vanilla 0.561 0.745 0.677 0.307 0.237 0.809  FCT 0.345 (0.000-0.719)  below every vanilla run in 2/6 FCT runs  FCT misses 2  FCT error: missed
+    148                      polyp   1.8%  vanilla 0.575 0.079 0.907 0.848 0.780 0.859  FCT 0.476 (0.000-0.863)  below every vanilla run in 2/6 FCT runs  FCT misses 2  FCT error: missed
+    161                      polyp   3.5%  vanilla 0.916 0.450 0.393 0.441 0.467 0.295  FCT 0.355 (0.211-0.456)  below every vanilla run in 2/6 FCT runs  FCT misses 0  FCT error: false pos
+    150                      polyp   4.2%  vanilla 0.712 0.899 0.908 0.903 0.876 0.829  FCT 0.725 (0.157-0.939)  below every vanilla run in 2/6 FCT runs  FCT misses 0  FCT error: missed
+    53                       polyp   0.8%  vanilla 0.832 0.282 0.296 0.207 0.297 0.193  FCT 0.224 (0.142-0.304)  below every vanilla run in 2/6 FCT runs  FCT misses 0  FCT error: false pos
+    36                       polyp   0.9%  vanilla 0.000 0.716 0.000 0.000 0.002 0.000  FCT 0.000 (0.000-0.000)  below every vanilla run in 0/6 FCT runs  FCT misses 6  FCT error: missed
+    101                      polyp   1.5%  vanilla 0.464 0.515 0.461 0.662 0.538 0.534  FCT 0.435 (0.355-0.544)  below every vanilla run in 5/6 FCT runs  FCT misses 0  FCT error: false pos
+
+4. BAR  S3LMUP_s1 - PVT_VANILLA_s1 per set, and the 5 images it loses most on
+  Kvasir: -0.0002  = 10 worst images -0.0138, 10 best +0.0110, other 80 +0.0026;  complete misses 0 vs 0
+  ClinicDB: +0.0022  = 10 worst images -0.0044, 10 best +0.0057, other 42 +0.0009;  complete misses 0 vs 0
+  ColonDB: +0.0102  = 10 worst images -0.0129, 10 best +0.0127, other 360 +0.0104;  complete misses 14 vs 19
+      350                      polyp   1.5%  PVT_VANILLA_s1 0.626  S3LMUP_s1 0.011  (S3LMUP_s1 at 0.5: missed 0.92, false pos 12.70 of polyp area)
+      356                      polyp   0.5%  PVT_VANILLA_s1 0.639  S3LMUP_s1 0.077  (S3LMUP_s1 at 0.5: missed 0.10, false pos 21.91 of polyp area)
+      208                      polyp   0.5%  PVT_VANILLA_s1 0.738  S3LMUP_s1 0.190  (S3LMUP_s1 at 0.5: missed 0.06, false pos 7.89 of polyp area)
+      206                      polyp   0.8%  PVT_VANILLA_s1 0.886  S3LMUP_s1 0.355  (S3LMUP_s1 at 0.5: missed 0.05, false pos 3.45 of polyp area)
+      374                      polyp   0.7%  PVT_VANILLA_s1 0.753  S3LMUP_s1 0.238  (S3LMUP_s1 at 0.5: missed 0.23, false pos 4.77 of polyp area)
+  CVC-300: -0.0150  = 10 worst images -0.0221, 10 best +0.0081, other 40 -0.0010;  complete misses 0 vs 0
+  ETIS: +0.0115  = 10 worst images -0.0176, 10 best +0.0246, other 176 +0.0045;  complete misses 12 vs 9
+      53                       polyp   0.8%  PVT_VANILLA_s1 0.832  S3LMUP_s1 0.192  (S3LMUP_s1 at 0.5: missed 0.00, false pos 8.38 of polyp area)
+      12                       polyp   0.9%  PVT_VANILLA_s1 0.701  S3LMUP_s1 0.113  (S3LMUP_s1 at 0.5: missed 0.00, false pos 15.97 of polyp area)
+      161                      polyp   3.5%  PVT_VANILLA_s1 0.916  S3LMUP_s1 0.456  (S3LMUP_s1 at 0.5: missed 0.05, false pos 2.19 of polyp area)
+      74                       polyp   0.6%  PVT_VANILLA_s1 0.889  S3LMUP_s1 0.437  (S3LMUP_s1 at 0.5: missed 0.71, false pos 0.03 of polyp area)
+      71                       polyp   0.7%  PVT_VANILLA_s1 0.693  S3LMUP_s1 0.420  (S3LMUP_s1 at 0.5: missed 0.73, false pos 0.00 of polyp area)
+
+per-image numbers for every run: /home/user/BACFR/paper/facts/per_image/pvt.csv

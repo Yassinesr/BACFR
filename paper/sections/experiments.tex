@@ -1,0 +1,249 @@
+\section{Experiments}
+\label{sec:experiments}
+
+We test the claims of Sections~\ref{sec:analysis} and~\ref{sec:method} in the order in which they were
+made: FCT improves Polyp-PVT and PraNet-V2 over their own baselines \pend{(ASGNet pending)}, most on
+unseen data (Section~\ref{sec:main}), and a label-aware variant generalizes to six more centres
+(Section~\ref{sec:polypgen}); FCT makes predictions more flip-consistent
+(Section~\ref{sec:flip}); a per-image analysis shows where its gains come from
+(Section~\ref{sec:where}); and a dissection of its components shows
+that its weight acts on the gradient as Corollary~\ref{cor:lag} predicts and that its constant needs no
+tuning (Section~\ref{sec:ablation}).
+Section~\ref{sec:cost} reports its cost.
+
+\subsection{Datasets and Evaluation Protocol}
+\label{sec:setup}
+
+We train on 1,288 images, 800 from Kvasir-SEG~\cite{jha2020kvasir} and 488 from
+CVC-ClinicDB~\cite{bernal2015clinicdb}, drawn from the 1,450-image training split
+of~\cite{fan2020pranet}; none of them appears in a test set. Because this set is smaller than the full
+split, absolute scores are not directly comparable with published ones, and every comparison below is
+between models trained on the same images. We test on the five standard test sets: the test splits of
+Kvasir-SEG (100 images) and CVC-ClinicDB (62), which we call seen, and
+CVC-ColonDB~\cite{tajbakhsh2016colondb} (380), CVC-300~\cite{vazquez2017endoscene} (60) and
+ETIS~\cite{silva2014etis} (196), which are unseen in training. CVC-ColonDB and CVC-300 come from the same
+group as CVC-ClinicDB, whereas ETIS comes from another centre.
+
+We report the mean Dice (mDice) of the evaluation toolbox of~\cite{fan2020pranet}, which Polyp-PVT also
+uses: each predicted map is min-max normalized and binarized at 256 thresholds, and the Dice coefficient
+is averaged over images and thresholds. The flip gap of Eq.~\eqref{eq:flipgap} is computed on the masks
+thresholded at 0.5 at the input resolution of the network, with add-one smoothing so that two empty
+masks agree. Each network is evaluated on the five test sets after every epoch with the per-image Dice
+of the official Polyp-PVT code, and we keep the epoch with the highest five-set mean, for vanilla and
+FCT alike; Section~\ref{sec:main} also reports the gains without this selection.
+
+Each configuration is trained with six random seeds, and vanilla and FCT share each seed. We report
+the mean and standard deviation (SD) over seeds, the mean paired difference with its 95\% confidence
+interval (CI) from the $t$-distribution with five degrees of freedom, and the number of seeds on which
+FCT scores higher. An exact permutation test over all 924 ways of splitting the twelve runs of a
+comparison into two groups of six reaches the same conclusion as the CI for every entry of
+Tables~\ref{tab:main_polyppvt} and~\ref{tab:main_pranetv2}.
+
+\subsection{Implementation Details}
+\label{sec:implementation}
+
+We add FCT to three networks without changing their architectures or retuning their recipes.
+Polyp-PVT~\cite{dong2023polyppvt} uses a PVTv2-B2 encoder~\cite{wang2022pvtv2}. As in its official code,
+it is trained with AdamW, a learning rate of $10^{-4}$, a weight decay of $10^{-4}$, batches of 16 images
+of $352\times352$ pixels, input scales of 0.75, 1 and 1.25, element-wise gradient clipping at 0.5 and 99 epochs, and
+its encoder has a stochastic-depth rate of 0.1; we add mixed precision. Its official recipe applies no orientation
+augmentation by default, and we keep this default, so vanilla Polyp-PVT never sees a flipped image.
+PraNet-V2~\cite{hu2026pranetv2} uses a Res2Net-50 encoder~\cite{gao2021res2net}, which has no stochastic
+depth, and is trained with Adam, a constant learning rate of $10^{-4}$, batches of 8 images and 29
+epochs, with the data pipeline, input scales and mixed precision of Polyp-PVT. ASGNet~\cite{sun2026asgnet} uses a PVTv2-B3 encoder and keeps its own
+recipe: Adam, batches of 40 images accumulated over \pend{eight} parts, 79 epochs at a single scale in full
+precision, a cosine learning-rate schedule, and its own data loader, which applies random horizontal
+flips, crops, rotations, colour changes and label noise. Unlike the other two, ASGNet is therefore
+trained with flip augmentation even without FCT. FCT uses $\lambda=0.5$, set in preliminary runs on
+Polyp-PVT, and $a=2$ for all three networks. Each run uses one \pend{[GPU model]} GPU.
+
+\subsection{Main Results}
+\label{sec:main}
+
+FCT improves the five-set mean Dice of both networks on every seed, and its largest gains are on the
+unseen sets (Tables~\ref{tab:main_polyppvt} and~\ref{tab:main_pranetv2}, Fig.~\ref{fig:seeds}). For
+Polyp-PVT, the five-set mean rises by 0.52 points, with a 95\% CI of $[0.15, 0.90]$, and ETIS gains 1.65
+points $[0.88, 2.42]$ on all six seeds; the gains on the other four sets are positive on average but
+within seed variation. For PraNet-V2, the five-set mean rises by 1.68 points $[0.69, 2.67]$. Its largest
+gains are on ETIS, 3.61 points $[0.23, 6.99]$, and on CVC-ColonDB, 3.01 points $[1.25, 4.77]$ on all six
+seeds, and Kvasir also improves, by 1.69 points $[0.12, 3.26]$. For PraNet-V2, FCT also lowers the SD over
+seeds on every set. No set loses on average for either network; the smallest gains are on CVC-300
+for both networks, $+0.06$ and $+0.04$ points, and on CVC-ClinicDB for PraNet-V2, $+0.03$.
+\pend{For ASGNet, which already trains with random flips, Table~\ref{tab:main_asgnet} will report the same comparison when
+its six seeds finish.}
+
+\input{tables/main_polyppvt}
+\input{tables/main_pranetv2}
+\input{tables/main_asgnet}
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=\columnwidth]{figures/fig_seeds.pdf}
+\caption{Paired gains of FCT over vanilla in mDice points: one hollow marker per seed, and the mean
+with its 95\% CI below them. Every seed gains on the five-set mean for both networks, and the largest
+gains are on ETIS and, for PraNet-V2, CVC-ColonDB.}
+\label{fig:seeds}
+\end{figure}
+
+Without epoch selection, the gains remain positive on average but are less certain.
+Fig.~\ref{fig:curves} shows the five-set mean of the
+training-time evaluator after every epoch: the six-seed mean of FCT lies above that of vanilla after 81
+of 99 epochs for Polyp-PVT and after 28 of 29 epochs for PraNet-V2. Averaged over the last ten epochs,
+without any selection, FCT gains $+0.42$ $[-0.03, 0.88]$ and $+2.41$ $[1.40, 3.43]$ points on the
+five-set mean of the two networks, and $+1.52$ $[0.11, 2.93]$ and $+3.71$ $[0.75, 6.68]$ points on
+ETIS (Appendix, Table~\ref{tab:selfree}). At the last epoch alone, neither five-set mean gain has a CI
+above zero: $+0.55$ $[-0.11, 1.22]$ for Polyp-PVT and $+0.49$ $[-1.17, 2.14]$ for PraNet-V2, whose curves
+peak early and decline, so that its last epoch is a poor checkpoint for either arm.
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=\columnwidth]{figures/fig_curves.pdf}
+\caption{Five-set mean Dice of the training-time evaluator after every epoch, without (dashed) and
+with (solid) FCT; mean and SD over six seeds. FCT lies above vanilla through most of training.}
+\label{fig:curves}
+\end{figure}
+
+\subsection{Six More Centres}
+\label{sec:polypgen}
+
+Of the five standard test sets, only ETIS comes from another centre than the training images
+(Section~\ref{sec:setup}). PolypGen~\cite{ali2023polypgen} adds six more centres; we use its 1,411 single-frame images with a
+polyp, none of which took part in training or in selecting a checkpoint. We fixed the analysis before
+scoring any map: the primary result is the mDice pooled over the six centres, every image counted once,
+over all six seeds, and each centre is a secondary result. So far, PolypGen maps exist only for the
+confidence-graded weight, row (h) of Table~\ref{tab:rules}, and not yet for FCT. This label-aware
+variant raises the pooled mDice of Polyp-PVT from 82.14\% to 82.98\%, by 0.84 points $[0.59, 1.09]$, on
+all six seeds, and its gain has a CI above zero on four of the six centres (Table~\ref{tab:polypgen});
+an exact permutation test over the 924 splits of the twelve runs gives $p=0.002$ for the pooled gain.
+\pend{FCT's checkpoints will be scored with the same analysis.}
+
+\input{tables/tab_polypgen}
+
+\subsection{Flip Consistency}
+\label{sec:flip}
+
+FCT makes both networks more flip-consistent on every test set (Table~\ref{tab:flipgap}). It lowers the
+five-set mean flip gap from 12.5\% to 7.5\% for Polyp-PVT and from 15.6\% to 10.2\% for PraNet-V2, and
+the flip gap on the training images by 84\% and 76\%. The reduction holds on every seed and in every
+row of the table. Two observations qualify it. First, flip consistency is not accuracy: the largest
+reduction on a test set, 70\% for Polyp-PVT on CVC-ClinicDB, comes with almost no change in Dice, and CVC-ColonDB and
+ETIS remain the least consistent sets after FCT. Second, training on flipped images lowers the flip
+gap by itself. In preliminary single runs of Polyp-PVT, supervising the three views without any pull,
+row~(b) of Table~\ref{tab:rules}, reached a five-set flip gap of 8.2\%, and the official random flip and
+rotation augmentation reached 6.8\%, below that of FCT; yet the five-set mean Dice of the latter,
+85.75\%, was below that of every vanilla seed. A lower flip gap alone therefore does not explain the gains of FCT, and we
+read it as a symptom that the views are tied together, not as the cause of the gains.
+
+\input{tables/tab_flipgap}
+
+\subsection{Where Do the Gains Come From?}
+\label{sec:where}
+
+For PraNet-V2, the gains on the unseen sets are spread over many images: on ETIS, the 176 images
+outside the ten largest gains and the ten largest losses contribute 2.94 of its 3.61 points. For
+Polyp-PVT, they are more concentrated: on ETIS, the ten images with the largest gains contribute 1.78
+points, more than the net gain of 1.65, and the other 176 images contribute 0.79.
+Table~\ref{tab:errors} breaks the errors down at a threshold of 0.5 on the per-image min-max-normalized
+maps. The two networks gain in different ways. PraNet-V2 fails less
+often: the number of images with a Dice below 0.1 falls from 31.8 to 25.0 per run on ETIS and from 56.5
+to 47.5 on CVC-ColonDB. Polyp-PVT fails about as often with FCT as without, 10.3 and 10.5 images per run
+on ETIS; it gains instead by predicting less false-positive area, 1.31 instead of 1.52 times the polyp
+area. In two cases, small polyps carry much of the gain:
+the quarter of images with the smallest polyps gains 5.46 points on ETIS for Polyp-PVT and 6.16 points
+on CVC-ColonDB for PraNet-V2. The pattern is not general: on ETIS, the smallest polyps gain 2.70 points
+for PraNet-V2 and the next quarter 6.05, and on CVC-300 the smallest polyps lose with both networks. These
+breakdowns are descriptive, and with four size groups per set and network, some differences are
+expected by chance.
+
+\input{tables/tab_errors}
+
+Fig.~\ref{fig:qual} shows examples. Without FCT, PraNet-V2 misses the polyp in rows 1, 2 and 4, and
+Polyp-PVT adds spurious regions in rows 1--3; with FCT, both predictions concentrate on the polyp. The last row shows the image on which FCT loses most: with FCT, Polyp-PVT adds a false region,
+and PraNet-V2 misses the polyp.
+
+\begin{figure*}[t]
+\centering
+\includegraphics[width=0.94\textwidth]{figures/fig_qual.pdf}
+\caption{Examples from the unseen sets: image, label, and the maps predicted by each network without
+and with FCT (seed 1), each with its mDice. Rows 1--4: four of the twelve unseen-set images with the
+largest gains, averaged over six seeds and both networks. Row 5: the image with the largest loss.}
+\label{fig:qual}
+\end{figure*}
+
+\subsection{Ablation Studies}
+\label{sec:ablation}
+
+\textit{Component dissection.} FCT has four components: the three supervised views of
+Eq.~\eqref{eq:sup}, the pulls on the flipped views, their label-aware weight of Eq.~\eqref{eq:weight},
+and the upright pull of Eq.~\eqref{eq:uppull}. Table~\ref{tab:rules} dissects them on Polyp-PVT, against
+the same vanilla runs throughout. Row (b) supervises the three views without any pull. It is the
+flip-augmentation control, and row (b) minus vanilla is the gain of the flips alone. Rows (c)--(e) add
+to row (b) the upright pull alone, the weighted flip pulls alone, and both, which is FCT. Their
+differences from row (b) decompose the gain of FCT over flip augmentation, and comparing row (e) with the
+two single additions shows whether the pulls add up. Rows (f) and (g) change only the weight function of
+FCT, to unweighted flip pulls and to the lag gate without its margin. We fixed the protocol before
+seeing these rows: rows (b) and (c) are trained with six seeds, and rows (f) and (g) with three seeds
+first, extended to six only if they land near FCT. \pend{Rows (b), (c), (f) and (g) are being trained;
+ASGNet, whose own recipe already includes random flips (Table~\ref{tab:main_asgnet}), adds a second test
+of FCT beyond flip augmentation.} Preliminary single unseeded runs of row (b) and of unweighted flip
+pulls without the upright pull reached five-set means of 86.56\% and 87.06\% and ETIS scores of 80.78\%
+and 80.49\%, against 87.08\% and 80.26\% for FCT over six seeds; single runs cannot rank variants that
+differ by less than a point. With six seeds, the paired CI of the difference between two variants spans
+about $\pm0.4$ to $\pm0.7$ points on the five-set mean, and with three seeds about 2.4 times more, so
+small effects will not be resolved.
+
+\input{tables/tab_rules}
+
+The completed rows already answer two questions. First, the upright pull adds little on top of the
+weighted flip pulls: FCT minus row (d) is $+0.05$ $[-0.36, 0.47]$ points on the five-set mean, although FCT is the only variant
+so far that improves all five sets on average. Second, the form of the label-aware weight barely moves
+Dice. Row (h) replaces the lag-or-margin weight with the confidence-graded weight sketched in
+Section~\ref{sec:relation}, which keeps a weight of 1 where the upright view is correct, raises it to
+$1+p^{o}$ on missed polyp pixels and lowers it to $1-p^{o}$ on false-positive pixels; row (d) minus row
+(h) is $+0.06$ $[-0.60, 0.73]$. Rows (d), (e) and (h) all improve ETIS with CIs above zero.
+
+Their gradients, however, differ sharply. The gradient of the lag-or-margin pulls has a cosine of 0.53
+with the gradient of the rest of the objective, against 0.26 for the confidence-graded weight, and it is
+about a third smaller relative to it: the ratio of the two gradients' norms is 0.08, against 0.12. The gap holds throughout training
+(Fig.~\ref{fig:cos}) and on every seed: the cosine ranges over $[0.47, 0.56]$ for rows (d) and (e) and
+over $[0.18, 0.33]$ for row (h). This is the effect that Eq.~\eqref{eq:weights} predicts. The
+confidence-graded weight keeps full weight on the pulls of leading flipped views, which point away from
+the label (Corollary~\ref{cor:lag}), and even raises the weight where the upright view misses a polyp.
+Leading pixels are common: in the runs where we logged them, Polyp-PVT with $a<2$ and PraNet-V2, a flipped
+view leads the upright view on about 44\% of its pixels at the end of training, although this is a share
+of pixels, not of the gradient. \pend{Row (c) will show
+whether the weight's effect on the gradient carries over to Dice.}
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=\columnwidth]{figures/fig_cos.pdf}
+\caption{Cosine between the gradient of the flip pulls and that of the rest of the objective during
+training of Polyp-PVT, for rows (d), (e) and (h) of Table~\ref{tab:rules}; per-epoch means, smoothed over five epochs,
+with the SD over six seeds. The lag-or-margin weight doubles the alignment of the consistency gradient
+with the rest of the objective.}
+\label{fig:cos}
+\end{figure}
+
+\textit{Constant $a$.} The results are insensitive to $a$, so the constant needs no tuning
+(Table~\ref{tab:sweep}; row (g) of Table~\ref{tab:rules}, \pend{pending}, adds the limit $a\to\infty$,
+which keeps only the lagging pulls). Every value in $\{0.5, 1, 1.5, 2\}$ improves ETIS by 1.6 to 2.1 points, and none
+differs significantly from $a=2$ on the five-set mean. The value $a=2$ is the only one that improves all
+five sets on average, but this distinction is within seed variation. These runs do not fully explain
+the insensitivity. The case that $a=2$ removes, a flipped view that leads a wrong upright view, is rare: it
+arises on only 0.16\% of the pixels at the end of training (Polyp-PVT, $a<2$) and on 0.24\% (PraNet-V2).
+But $a$ also scales the pull on the far more frequent leading pixels with a correct upright view, and
+this change, too, leaves Dice unchanged within seed variation.
+
+\input{tables/tab_sweep}
+
+\subsection{Cost}
+\label{sec:cost}
+
+FCT multiplies the training time per epoch by 3.6 for Polyp-PVT and by 3.3 for PraNet-V2
+(Table~\ref{tab:cost}). This matches its five forward and three backward passes for each image and input scale,
+which cost $11/3\approx3.7$ times a single view if a backward pass costs twice a forward pass. Without
+the upright pull, the two passes without gradient are not needed, and the measured factor drops to
+3.0. Inference
+is unchanged: the trained network is the host network, applied once to the upright image.
+
+\input{tables/tab_cost}

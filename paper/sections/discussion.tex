@@ -1,0 +1,41 @@
+\section{Discussion and Limitations}
+\label{sec:discussion}
+
+\textit{Why the unseen sets?} FCT gains most on ETIS, the test set from another centre, and, for
+PraNet-V2, on CVC-ColonDB: the two sets on which both networks are least accurate and least
+flip-consistent. One explanation is the hypothesis of Section~\ref{sec:intro}: tying the views
+together discourages cues that change under a flip, and such cues are unlikely to transfer to a new
+centre. Our data support this only indirectly. The flip gap falls on every set, but its fall does not
+predict where Dice rises, and a single run with flip and rotation augmentation lowered it without
+any gain. The experiments do not yet separate three candidate causes of the gains: training on the
+supervised flipped views, flip consistency itself, and a consistency gradient better aligned with
+supervision. Preliminary single runs (Section~\ref{sec:ablation}) leave open that the first two account
+for much of the gain; the pending rows of the component dissection (Table~\ref{tab:rules}) are
+designed to settle this.
+
+\textit{Scope of the analysis.} Proposition~\ref{prop:identity} needs a binary label and a
+cross-entropy or squared-error pull. It applies to each class of a multi-label task, one class against
+the rest, but not directly to a softmax over several classes, where the two error vectors need not be
+parallel. Soft labels also break it, since the two errors may then lie on opposite sides of the target;
+FCT therefore binarizes the label at 0.5 when it computes the weights, including at rescaled input
+sizes, where interpolation softens the mask boundary. The analysis also stops at the logits: it does
+not describe how the network shares the per-pixel pulls through its parameters.
+
+\textit{Cost.} FCT multiplies the training time by about 3.5 and leaves inference unchanged. Without
+the upright pull, the factor drops to three (Table~\ref{tab:cost}) at a similar accuracy
+(Table~\ref{tab:rules}); applying FCT to part of each batch would lower it further.
+
+\textit{Limits of the evidence.} The evidence has five limits. First, it covers two networks
+\pend{(three with ASGNet)} and one training set of 1,288 images; of the five standard test sets, only
+ETIS comes from another centre, and on the six PolypGen centres only the confidence-graded variant
+has been tested so far. Second, the reported epoch is selected on the test sets. The selection is the
+same for both arms, and the gains remain positive on average without it but are not significant at the
+last epoch (Fig.~\ref{fig:curves}); the absolute scores are optimistic. Third, the weight was developed
+over several preliminary variants scored on the same five test sets, so these sets also guided its
+design. The confidence-graded weight, for instance, was carried to six seeds because of its result on
+seed~1, which row (h) of Table~\ref{tab:rules} includes; on seeds 2--6 alone, its five-set mean gain is
+$+0.32$ $[0.08, 0.56]$. The gain of FCT is smallest on seed~1, $+0.18$ points, and is $+0.59$
+$[0.15, 1.03]$ on seeds 2--6. Fourth, six seeds resolve gains of about half a point on the five-set
+mean, but not the smaller effects on single sets, whose CIs are up to several points wide. Fifth,
+$\lambda$ was set on Polyp-PVT and not retuned for the other networks, and four rows of the component
+dissection are still pending.
