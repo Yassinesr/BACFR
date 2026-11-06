@@ -1,0 +1,1590 @@
+% Which View Should Teach? Label-Aware Flip Consistency for Generalizable Polyp Segmentation.
+% The whole paper in one file, written by flatten.py from main.tex and the files it inputs.
+% Edit those sources, not this file. Build: pdflatex fct_paper.tex (twice).
+\documentclass[journal]{IEEEtran}
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{amsmath,amssymb}
+\usepackage{xcolor}
+\usepackage{graphicx}
+\usepackage{cite}
+\usepackage{booktabs}
+\usepackage{threeparttable}
+\usepackage{tikz}
+\usetikzlibrary{arrows.meta,positioning,calc,fit,backgrounds}
+\usepackage[hidelinks]{hyperref}
+
+\newtheorem{proposition}{Proposition}
+\newtheorem{corollary}{Corollary}
+
+% Red marks text that waits on runs still in progress (ASGNet) or on a decision.
+% Remove the colour before submission.
+\newcommand{\pend}[1]{\textcolor{red}{#1}}
+
+\begin{document}
+
+\title{Which View Should Teach? Label-Aware Flip Consistency for Generalizable Polyp Segmentation}
+\author{\pend{Authors}}
+\maketitle
+
+\begin{abstract}
+Polyp segmentation networks lose accuracy on centres unseen in training. A mirrored
+polyp is still a polyp, so a reliable model should predict the mirrored mask for a
+mirrored image; we observe that trained models do not, and are least flip-consistent on
+the hardest test sets. Flip consistency regularization is a natural remedy, but it comes
+from semi-supervised learning, where no label says which view is correct. We show that,
+in binary segmentation with labels available, a cross-entropy consistency pull toward a
+teacher view is a reweighted supervised pull: it moves the student view toward the label
+only where the teacher is closer to it. Building on this identity, we propose label-aware
+flip-consistency training (FCT), in which each view is pulled at full strength only
+toward a more accurate view, and never toward a misclassification it has avoided. The
+rule's one constant is set by the decision threshold rather than tuned, and FCT leaves
+the network and its inference unchanged. Experiments on five public benchmarks, each repeated over six random seeds, show that
+FCT improves the five-set mean Dice of Polyp-PVT and PraNet-V2 on every seed
+\pend{[ASGNet: pending]} and markedly reduces flip inconsistency. Notably, on the unseen ETIS dataset, FCT improves PraNet-V2 by 3.6 Dice
+points. \pend{Code is available at [URL].}
+\end{abstract}
+
+\begin{IEEEkeywords}
+Polyp segmentation, domain generalization, consistency regularization, flip equivariance,
+self-distillation.
+\end{IEEEkeywords}
+
+% ---- sections/introduction.tex ----
+\section{Introduction}
+\label{sec:intro}
+
+Polyp segmentation networks that are accurate on their training data lose much of that accuracy
+at new centres, whose images differ in endoscopes, illumination and
+patients~\cite{ali2023polypgen,ali2024endocv}. This gap limits their clinical value: colorectal
+cancer is among the leading causes of cancer death~\cite{siegel2024cancer}, and automatic
+segmentation aims to help endoscopists, who miss about one in five
+polyps~\cite{vanrijn2006miss}. Recent networks reach high Dice on test images from their
+training datasets~\cite{fan2020pranet,wei2021sanet,dong2023polyppvt,hu2026pranetv2,sun2026asgnet},
+but much lower Dice elsewhere. In our experiments, for example, Polyp-PVT~\cite{dong2023polyppvt}
+reaches 93.2\% mean Dice on \mbox{CVC-ClinicDB} but only 78.6\% on ETIS, a dataset from another
+hospital. For clinical use, closing this gap matters more than further gains on the training
+distribution.
+
+Polyp segmentation also has a symmetry that standard training does not enforce. A mirrored
+polyp is still a polyp, so the correct mask of a mirrored image is the mirrored mask. We measure
+departures from this flip equivariance with the flip gap: one minus the Dice overlap between the
+binary masks predicted for an image and for its flipped copy, once flipped back, averaged over
+horizontal and vertical flips. As Fig.~\ref{fig:teaser} shows, the flip gap of trained models
+is far from zero, and it is largest on the two hardest test sets, \mbox{CVC-ColonDB} and ETIS.
+We hypothesize that a model whose answer changes with a mirror image relies partly on cues that
+do not belong to the polyp, and that such cues are unlikely to transfer to new centres.
+
+\begin{figure*}[t]
+\centering
+\includegraphics[width=\textwidth]{figures/fig1_flipgap.pdf}
+\caption{Flip gap (left; one minus the Dice overlap between the binary masks predicted for an
+image and for its flipped copy, once flipped back, averaged over horizontal and vertical flips)
+and mDice (right) on five test sets, without (hollow) and with (filled) FCT. Both networks are
+least flip-consistent on \mbox{CVC-ColonDB} and ETIS, the two sets where they are least
+accurate. FCT lowers the flip gap on every set, and its largest mDice gain, for both networks,
+is on ETIS. Means over six seeds.}
+\label{fig:teaser}
+\end{figure*}
+
+Two remedies are common. Flip augmentation trains on mirrored copies with mirrored labels, but
+each copy is constrained only by its own label, never by the prediction on its mirror.
+Consistency regularization adds that constraint by penalizing disagreement between the
+predictions on the views. It comes from semi-supervised learning, where agreement between views
+is the only signal that unlabeled images
+provide~\cite{laine2017temporal,tarvainen2017mean,sohn2020fixmatch}, and medical variants
+enforce it under spatial transformations~\cite{bortsova2019consistency,li2021tcsm}. Since no
+label says which view is right, the views are treated as equally reliable or weighed by the
+model's own confidence. Supervised uses of consistency, such as AugMix~\cite{hendrycks2020augmix}
+and R-Drop~\cite{liang2021rdrop}, keep this symmetry even though the label is known, so a
+correct view can be pulled toward a wrong one.
+
+We show that, under full supervision, the label settles which view should teach. For binary
+segmentation with a cross-entropy consistency loss toward a detached teacher view, the gradient
+on the student equals the supervised gradient scaled by one minus the ratio of the teacher's
+error to the student's. Similar decompositions of the distillation gradient are known for
+classification~\cite{furlanello2018born,tang2020understanding}; here we apply the identity pixel
+by pixel, across views of one image. A consistency pull is therefore a reweighted supervised
+pull: it moves the student toward the label where the teacher is closer to it, and away from the
+label where the student is closer. Unweighted consistency mixes both kinds of pulls in every
+image, and only the label can tell them apart.
+
+Building on this identity, we propose label-aware flip-consistency training (FCT). Each image is
+presented upright, flipped horizontally and flipped vertically, and all three views are
+supervised. Each flipped view is pulled toward the upright view at full strength wherever it lags
+behind it. Where it leads, the pull is kept only if the upright view is correct, scaled by how
+far the upright prediction lies on the correct side of the 0.5 threshold; this weak pull keeps
+the views consistent without moving either across the threshold, much as label smoothing tempers
+overconfident targets~\cite{yuan2020revisiting}. The upright view, in turn, learns from the
+flipped view closest to the label wherever that view is more accurate. The rule's single
+constant is set by the decision threshold rather than tuned, and FCT changes only the training
+objective: it multiplies the training time by about 3.5 and adds nothing at inference. To the
+best of our knowledge, FCT is the first rule that uses the label to decide, pixel by pixel and
+across views of one network, which view teaches.
+
+We add FCT, without retuning, to \pend{three} segmentation networks of different design:
+Polyp-PVT~\cite{dong2023polyppvt}, built on a pyramid vision transformer;
+PraNet-V2~\cite{hu2026pranetv2}, a convolutional network with dual-supervised reverse attention;
+\pend{and ASGNet~\cite{sun2026asgnet}, which guides its features with spectral cues}. Each
+network is trained with and without FCT under six paired random seeds and tested on five public
+test sets, three of which are unseen in training. FCT improves the five-set mean Dice on every
+seed \pend{for every network}. The largest gains are on ETIS, +1.65 and +3.61 points for
+Polyp-PVT and PraNet-V2, and on \mbox{CVC-ColonDB} for PraNet-V2, +3.01 points, all with paired
+95\% confidence intervals above zero. FCT also lowers the five-set mean flip gap by 40\% and
+34\%, respectively. On six more centres from the PolypGen benchmark~\cite{ali2023polypgen}, a
+label-aware variant improves the pooled Dice on every seed \pend{(FCT itself is pending)}. A
+component-by-component dissection relates these gains to the three
+supervised views, the pulls, their weight and the upright pull \pend{(four of its rows are still
+running)}.
+
+Our contributions are summarized as follows:
+\begin{itemize}
+\item We show that, in binary segmentation under full supervision, a cross-entropy consistency
+loss between two views acts, pixel by pixel, as a reweighted supervised loss whose direction
+depends on which view is closer to the label.
+\item We derive from this identity FCT, a label-aware flip-consistency rule whose single
+constant is set by the decision threshold. It plugs into any binary segmentation network and
+adds no cost at inference.
+\item We evaluate FCT on two architectures \pend{(three with ASGNet)}, five test sets and six
+paired seeds with confidence intervals, and dissect it component by component. It raises the
+five-set mean Dice of both networks on every seed, most on ETIS, and makes predictions markedly
+more flip-consistent.
+\end{itemize}
+% ---- sections/related.tex ----
+\section{Related Work}
+\label{sec:related}
+
+\subsection{Polyp Segmentation and Generalization}
+
+Deep polyp segmentation has advanced mainly through network design.
+PraNet~\cite{fan2020pranet} aggregates high-level features with a parallel partial decoder and
+refines boundaries with reverse attention. SANet~\cite{wei2021sanet} adds shallow attention and
+colour exchange, and UACANet~\cite{kim2021uacanet} attends to the uncertain region of each
+prediction. Later networks adopt transformer encoders, as Polyp-PVT~\cite{dong2023polyppvt} and
+ASGNet~\cite{sun2026asgnet} do, the latter guiding its features with spectral information, or
+add supervision, as PraNet-V2~\cite{hu2026pranetv2} does with dual-supervised reverse attention.
+Other recent designs add contrastive transformer modules~\cite{xiao2024ctnet}, boundary-sensitive
+attention~\cite{shao2024polyper} or uncertainty modeling~\cite{du2025umnet}, or adapt the Segment
+Anything Model with a convolutional branch~\cite{li2024asps}. Closest to our motivation,
+VANet~\cite{cai2024vanet} observes that steering the colonoscope tip changes the viewpoint and the
+appearance of polyps, and handles this with viewpoint-aware modules. These networks change the
+architecture, whereas FCT changes only the training loss, so it complements rather than replaces
+them.
+
+Most of these models follow the protocol of~\cite{fan2020pranet}: they train on
+Kvasir-SEG~\cite{jha2020kvasir} and CVC-ClinicDB~\cite{bernal2015clinicdb}, and they are tested
+on these two datasets and on CVC-ColonDB~\cite{tajbakhsh2016colondb},
+CVC-300~\cite{vazquez2017endoscene} and ETIS~\cite{silva2014etis}, which are unseen in training.
+Accuracy on the unseen sets stays well below that on the seen ones, and multi-centre benchmarks
+confirm the gap at scale~\cite{ali2023polypgen,ali2024endocv}. Domain generalization offers
+training-side remedies~\cite{zhou2023dgsurvey}, such as shape-aware
+meta-learning~\cite{liu2020saml} and frequency-space interpolation across
+sites~\cite{liu2021feddg}. For polyps, randomized global illumination
+augmentation~\cite{zhang2024illumination} and colour transfer~\cite{du2025umnet} target nuisance
+factors that vary across centres, and domain adaptation learns from unlabeled images of the target
+domain~\cite{lu2025dclps}. These methods diversify the training data, learn from differences
+between domains or need target images, whereas FCT adds a constraint between views of each training
+image and needs no target data, so the approaches are complementary.
+
+\subsection{Consistency Regularization and Equivariance}
+
+Consistency regularization asks a network to agree with itself across perturbed views of an
+input. It was developed for semi-supervised learning, where unlabeled images provide only this
+signal: the $\Pi$-model and temporal ensembling~\cite{laine2017temporal}, mean
+teachers~\cite{tarvainen2017mean}, unsupervised data augmentation~\cite{xie2020uda} and
+FixMatch~\cite{sohn2020fixmatch}. FixMatch keeps only pseudo-labels whose confidence exceeds a
+threshold, a proxy for correctness when the true label is unknown. Semi-supervised segmentation
+methods perturb inputs, features or networks~\cite{ouali2020cct,chen2021cps,yang2023unimatch}.
+In medical imaging, consistency under spatial transformations exploits the equivariance of
+segmentation on unlabeled scans~\cite{bortsova2019consistency,li2021tcsm}, or its invariance to
+the surrounding context~\cite{liu2025tracoco}. Mean teachers restrict consistency to reliable
+regions~\cite{yu2019uamt} or to ambiguous ones~\cite{xu2023acmt}, bidirectional patch displacement
+builds new samples for consistency learning guided by prediction confidence~\cite{chi2024abd}, and
+semi-supervised polyp segmentation aligns the affinity maps of a student and a
+teacher~\cite{wu2023aclnet}.
+
+With labels available, consistency also serves as a regularizer: AugMix~\cite{hendrycks2020augmix}
+matches predictions across augmentation chains, and R-Drop~\cite{liang2021rdrop} across dropout
+masks. A sample-efficiency analysis shows that, with label-invariant augmentations, consistency
+regularization learns from fewer samples than training on the augmented copies with their
+labels~\cite{yang2023dac}. Flip and rotation augmentation, by contrast, supervises each transformed copy with its own
+transformed label and does not relate the predictions on different copies. Equivariance can also
+be built into the architecture~\cite{cohen2016gcnn,veeling2018rotation}, enforced on class
+activation maps in weakly supervised segmentation~\cite{wang2020seam}, or approximated at test
+time by averaging predictions over transformed inputs~\cite{wang2019tta}, at the price of a
+constrained architecture or a multiplied inference cost. All these methods treat the views as
+equally reliable or weigh them by the model's own confidence, since none uses the label to
+compare views; under full supervision, FCT does exactly that.
+
+\subsection{Self-Distillation and Label-Aware Weighting}
+
+Knowledge distillation trains a student to match the soft predictions of a
+teacher~\cite{hinton2015distilling}. In self-distillation, the teacher is the model itself: an
+earlier generation of the same architecture~\cite{furlanello2018born}, its own deeper
+layers~\cite{zhang2019byot}, its predictions from the previous epoch~\cite{kim2021pskd} or
+dropout-sampled versions of itself~\cite{lee2023sddropout}.
+Closest to our setting, data-distortion guided self-distillation~\cite{xu2019ddgsd} makes a
+network agree with itself on two distorted copies of an image under full supervision, treating
+both copies alike. The consistency term of FCT is also self-distillation across views, but it
+compares teacher and student against the label, pixel by pixel.
+
+Several works relate distillation to the ground truth. Analyses of the distillation gradient
+show that it rescales the supervised gradient according to the teacher's confidence in the true
+class~\cite{furlanello2018born,tang2020understanding}, self-distillation over several rounds
+averages the labels of instances with correlated features~\cite{jeong2025selfdistill}, and Yuan et
+al.~\cite{yuan2020revisiting} relate distillation to label smoothing. Decoupled knowledge
+distillation~\cite{zhao2022dkd} splits the loss exactly into target-class and non-target-class
+terms, knowledge adjustment~\cite{wen2021preparing}, refined logits~\cite{sun2025rld} and label
+revision~\cite{lan2025labelrevision} correct teacher predictions that contradict the label, and confidence-aware multi-teacher distillation~\cite{zhang2022camkd} weights each
+teacher by how close its predictions are to the label. For segmentation, structured distillation
+transfers pixel-wise and pairwise knowledge from a large network to a compact
+one~\cite{liu2019skd}. Loss reweighting also changes how much
+each example counts: focal loss~\cite{lin2017focal} and online hard example
+mining~\cite{shrivastava2016ohem} emphasize examples with high loss, and the structure loss used
+by PraNet-style networks emphasizes pixels near boundaries~\cite{wei2020f3net}. By our identity,
+FCT belongs to this family: it reweights the supervised gradient of each pixel, but by how the
+pixel's error compares with that of another view of the same pixel, within one network rather
+than across separate teachers.
+% ---- sections/analysis.tex ----
+\section{When Does a Consistency Pull Help?}
+\label{sec:analysis}
+
+This section shows that, when the label is binary, a consistency loss toward a detached teacher
+view acts at every pixel as the supervised loss, rescaled by a factor that compares the errors of
+the two views. The sign of this factor tells, pixel by pixel, whether the pull helps or hurts, and
+Section~\ref{sec:method} builds FCT on it.
+
+\subsection{Notation}
+\label{sec:notation}
+
+Let $x\in\mathbb{R}^{H\times W\times 3}$ denote an image, $y\in\{0,1\}^{H\times W}$ its polyp mask,
+and $f$ a segmentation network that maps $x$ to a logit map $z=f(x)\in\mathbb{R}^{H\times W}$; the
+predicted probabilities are $p=\sigma(z)$, where $\sigma$ denotes the logistic function. Let $T_h$ and
+$T_v$ denote the horizontal and vertical flips. Each flip is its own inverse, so the prediction for a
+flipped view, brought back to the upright frame, is
+\begin{equation}
+z^{k}=T_k f(T_k x),\qquad k\in\{h,v\},
+\label{eq:views}
+\end{equation}
+and the upright view gives $z^{o}=f(x)$. A flip-equivariant network satisfies $z^{h}=z^{v}=z^{o}$.
+The flip gap of Section~\ref{sec:intro} measures departures from this equality on binary masks:
+\begin{equation}
+\Delta(x)=1-\frac{1}{2}\sum_{k\in\{h,v\}} D\big(\mathbf{1}[p^{o}>\tfrac12],\,\mathbf{1}[p^{k}>\tfrac12]\big),
+\label{eq:flipgap}
+\end{equation}
+where $D$ denotes the Dice overlap of two masks and $\mathbf{1}[\cdot]$ the indicator function, applied
+pixel by pixel.
+
+At a pixel $i$, the error of a view is $e_i=|p_i-y_i|\in[0,1]$, and the view is correct at the
+decision threshold of $\frac12$ if $e_i<\frac12$. We drop the index $i$ when a statement holds for
+each pixel separately. A consistency loss pulls a student view $s$ toward a teacher view $t$ whose
+probability $p_t$ is detached, that is, treated as a constant. We write
+\begin{equation}
+\ell(z_s;q)=-q\log\sigma(z_s)-(1-q)\log\big(1-\sigma(z_s)\big)
+\label{eq:bce}
+\end{equation}
+for the binary cross-entropy of the student's logit $z_s$ with a target $q\in[0,1]$. The consistency
+loss is $\ell(z_s;p_t)$ and the supervised loss is $\ell(z_s;y)$, and their gradients with respect to
+the logit are
+\begin{equation}
+\frac{\partial\ell(z_s;p_t)}{\partial z_s}=p_s-p_t,\qquad
+\frac{\partial\ell(z_s;y)}{\partial z_s}=p_s-y.
+\label{eq:grads}
+\end{equation}
+
+\subsection{Consistency as Reweighted Supervision}
+\label{sec:identity}
+
+The two gradients in Eq.~\eqref{eq:grads} are parallel whenever the label is binary: the consistency
+gradient is the supervised one, rescaled by how the errors of the two views compare.
+
+\begin{proposition}
+\label{prop:identity}
+Let $y\in\{0,1\}$, $p_s,p_t\in[0,1]$ and $p_s\neq y$. Then
+\begin{equation}
+\frac{\partial\ell(z_s;p_t)}{\partial z_s}=\Big(1-\frac{e_t}{e_s}\Big)\frac{\partial\ell(z_s;y)}{\partial z_s},
+\label{eq:identity}
+\end{equation}
+where $e_s=|p_s-y|$ and $e_t=|p_t-y|$ denote the errors of the student and the teacher.
+\end{proposition}
+
+\begin{IEEEproof}
+Because $y$ is $0$ or $1$, every $p\in[0,1]$ satisfies $p-y=(1-2y)|p-y|$: for $y=0$, $p-y=p$, and for
+$y=1$, $p-y=-(1-p)$. Hence $p_s-p_t=(p_s-y)-(p_t-y)=(1-2y)(e_s-e_t)=(p_s-y)(1-e_t/e_s)$, where the last
+step uses $(1-2y)e_s=p_s-y$ and $e_s>0$. Eq.~\eqref{eq:grads} completes the proof.
+\end{IEEEproof}
+
+The identity needs no assumption on the network or on the teacher's probability, only a binary
+label, which places both errors on the same side of the target. It also holds for a squared-error
+pull on probabilities, whose gradient with respect to $p_s$ is again $p_s-p_t$. Summed over pixels
+and differentiated with respect to the network parameters $\theta$, Eq.~\eqref{eq:identity} reads
+\begin{equation}
+\nabla_\theta\sum_i \ell(z_{s,i};p_{t,i})=\sum_i \omega_i\,\nabla_\theta\,\ell(z_{s,i};y_i),
+\qquad \omega_i=1-\frac{e_{t,i}}{e_{s,i}},
+\label{eq:weights}
+\end{equation}
+with the weights $\omega_i$ held constant. A consistency loss is thus a supervised loss with
+per-pixel weights, and some of these weights are negative.
+
+\begin{corollary}[Lag condition]
+\label{cor:lag}
+Under the conditions of Proposition~\ref{prop:identity}, a gradient step on $\ell(z_s;p_t)$ moves the
+student's probability toward the label if $e_t<e_s$, away from it if $e_t>e_s$, and not at all if
+$e_t=e_s$.
+\end{corollary}
+
+\begin{IEEEproof}
+A step of size $\eta$ changes the logit by $-\eta(p_s-p_t)=-\eta\,\omega\,(p_s-y)$, by
+Eq.~\eqref{eq:identity}. The supervised step $-\eta(p_s-y)$ moves $p_s$ toward $y$ because $\sigma$ is
+increasing, and $\omega>0$ if and only if $e_t<e_s$.
+\end{IEEEproof}
+
+To first order, the step lowers the student's error by $\eta\,\sigma'(z_s)(e_s-e_t)$, so we call
+$e_s-e_t$ the pull toward the label. Fig.~\ref{fig:pull}(a) maps it over the two errors. Below the
+diagonal, the teacher leads and the pull helps. Above it, the student leads and the pull hurts, in
+two ways. Where the teacher is wrong and the student right ($e_s<\frac12<e_t$), the pull drives a
+correct pixel toward a misclassification, with a strength $e_t-e_s$ that can approach that of a full
+supervised step. Where both are right ($e_s<e_t<\frac12$), the pull only lowers the student's
+confidence, and it stops when the student reaches the teacher, on the correct side of the threshold.
+
+\begin{figure*}[t]
+\centering
+\includegraphics[width=0.96\textwidth]{figures/fig_pull.pdf}
+\caption{Pull toward the label exerted on a student view by a detached teacher view at one pixel, as
+a function of the student's error $e_s$ and the teacher's error $e_t$ (Proposition~\ref{prop:identity});
+dashed lines mark the decision threshold. (a)~An unweighted pull, $e_s-e_t$, pushes the student away
+from the label wherever it leads, even toward a wrong teacher (top left). (b)~The FCT weight of
+Eq.~\eqref{eq:weight}. (c)~With it, every pull toward the label is kept, every pull that moves the student
+away from the label toward a wrong teacher is removed, and the remaining pulls away from the label are
+bounded by $1/8$.}
+\label{fig:pull}
+\end{figure*}
+
+Corollary~\ref{cor:lag} answers the question of our title at the level of a pixel. In
+semi-supervised learning, no label separates the two cases, so the views are pulled toward each
+other alike. Under full supervision, the label separates them at every pixel, and a pull can be kept
+where the teacher leads, and elsewhere only where it cannot reverse a correct decision.
+Section~\ref{sec:method} turns this rule into a weight.
+% ---- sections/method.tex ----
+\section{Label-Aware Flip-Consistency Training}
+\label{sec:method}
+
+FCT turns Corollary~\ref{cor:lag} into a training objective. Each training image is presented in three
+views, every view is supervised with the label, and the views teach each other only where the label
+shows that the teacher is closer to it, or where a pull cannot reverse a correct decision.
+Fig.~\ref{fig:overview} gives an overview. This section describes the supervised views, the pulls on
+the flipped views, the pull on the upright view and the full objective in turn, and then relates FCT
+to other consistency rules.
+
+\begin{figure*}[t]
+\centering
+% ---- figures/overview.tex ----
+% Overview of FCT (Section IV). Needs \usepackage{tikz} and
+% \usetikzlibrary{arrows.meta,positioning,calc,fit,backgrounds}.
+% Thumbnails: figures/ov/*.png (a Kvasir-SEG training image, its two flips and its label).
+\definecolor{flipc}{HTML}{2A78D6}
+\definecolor{upc}{HTML}{EB6834}
+\begin{tikzpicture}[
+  font=\footnotesize, >={Stealth[length=4.2pt,width=3.8pt]},
+  img/.style={inner sep=0pt, draw=black!35, line width=0.3pt},
+  net/.style={draw=black!70, line width=0.5pt, fill=black!4, rounded corners=1.5pt,
+              minimum width=9mm, minimum height=7mm, align=center},
+  map/.style={draw=black!70, line width=0.5pt, fill=white, minimum width=8mm, minimum height=7mm},
+  sup/.style={draw=black!60, line width=0.4pt, fill=black!4, rounded corners=1.5pt,
+              minimum height=5.5mm, inner xsep=2.5pt, align=center},
+  flow/.style={->, line width=0.5pt, black!75},
+  pull/.style={->, line width=1.2pt},
+  lab/.style={font=\scriptsize, black!85, align=center},
+]
+  \def\th{10.5mm}
+  % ---- inputs: the image and its two flips -------------------------------------
+  \node[img] (xh) at (0, 1.45)  {\includegraphics[width=\th]{figures/ov/xh.png}};
+  \node[img] (x)  at (0, 0)     {\includegraphics[width=\th]{figures/ov/x.png}};
+  \node[img] (xv) at (0, -1.45) {\includegraphics[width=\th]{figures/ov/xv.png}};
+  \node[lab, left=1.2mm of xh] {$T_h x$};
+  \node[lab, left=1.2mm of x]  {$x$};
+  \node[lab, left=1.2mm of xv] {$T_v x$};
+  % ---- one network, three passes ------------------------------------------------
+  \node[net] (fh) at (1.6, 1.45)  {$f$};
+  \node[net] (fo) at (1.6, 0)     {$f$};
+  \node[net] (fv) at (1.6, -1.45) {$f$};
+  \draw[flow] (xh) -- (fh); \draw[flow] (x) -- (fo); \draw[flow] (xv) -- (fv);
+  \begin{scope}[on background layer]
+    \node[draw=black!35, dashed, line width=0.4pt, rounded corners=2pt, fit=(fh)(fv), inner sep=2.2mm] (shared) {};
+  \end{scope}
+  \node[lab, below=0.6mm of shared] {shared weights,\\ same depth mask};
+  % ---- logits in the upright frame -----------------------------------------------
+  \node[map] (zh) at (3.45, 1.45)  {$z^{h}$};
+  \node[map] (zo) at (3.45, 0)     {$z^{o}$};
+  \node[map] (zv) at (3.45, -1.45) {$z^{v}$};
+  \draw[flow] (fh) -- node[lab, above, pos=0.62] {$T_h^{-1}$} (zh);
+  \draw[flow] (fo) -- (zo);
+  \draw[flow] (fv) -- node[lab, above, pos=0.62] {$T_v^{-1}$} (zv);
+  % ---- (1) the three supervised views ---------------------------------------------
+  \node[sup] (sh) at (5.2, 1.45)  {$\tfrac13\mathcal{L}_{\mathrm{host}}$};
+  \node[sup] (so) at (5.2, 0)     {$\tfrac13\mathcal{L}_{\mathrm{host}}$};
+  \node[sup] (sv) at (5.2, -1.45) {$\tfrac13\mathcal{L}_{\mathrm{host}}$};
+  \draw[flow] (zh) -- (sh); \draw[flow] (zo) -- (so); \draw[flow] (zv) -- (sv);
+  \node[img] (y) at (6.85, 0) {\includegraphics[width=\th]{figures/ov/y.png}};
+  \node[lab, below=0.6mm of y] {label $y$};
+  \draw[flow, black!45] (y.north west) -- (sh.east);
+  \draw[flow, black!45] (y.west) -- (so.east);
+  \draw[flow, black!45] (y.south west) -- (sv.east);
+  \node[lab, above=1.4mm of sh, xshift=4mm] {(1) three supervised views};
+  % ---- (2) the label-aware pulls between the views' probabilities -----------------
+  \node[map] (po) at (8.75, 0)     {$p^{o}$};
+  \node[map] (ph) at (10.95, 1.15) {$p^{h}$};
+  \node[map] (pv) at (10.95, -1.15) {$p^{v}$};
+  \draw[pull, flipc] (po.north) to[bend left=28] node[lab, above left, pos=0.45, xshift=1mm] {$C_h$, weight $w_h$} (ph.west);
+  \draw[pull, upc]   (ph.south) to[bend left=28] (po.east);
+  \draw[pull, flipc] (po.south) to[bend right=28] node[lab, below left, pos=0.45, xshift=1mm] {$C_v$, weight $w_v$} (pv.west);
+  \draw[pull, upc]   (pv.north) to[bend right=28] (po.east);
+  \node[lab] at (9.95, 0.47) {$U$, gate $g$};
+  \node[lab] at (9.85, 2.25) {(2) label-aware pulls, $p=\sigma(z)$};
+  \node[lab, anchor=west] at (11.55, 0.35) {\textcolor{flipc}{\rule[0.5ex]{3mm}{1.2pt}} flip pulls:};
+  \node[lab, anchor=west] at (11.55, 0.0) {lag or margin};
+  \node[lab, anchor=west] at (11.55, -0.45) {\textcolor{upc}{\rule[0.5ex]{3mm}{1.2pt}} upright pull:};
+  \node[lab, anchor=west] at (11.55, -0.8) {best flip, gated};
+  \node[lab] at (9.85, -2.2) {arrow: teacher (detached) $\to$ student};
+\end{tikzpicture}
+\caption{Overview of the proposed FCT. (1)~An image and its horizontal and vertical flips pass through
+one network; the flipped outputs are flipped back, and each view is supervised with the host network's
+own loss, weighted $\frac13$. (2)~The views then teach each other, with the teacher's probability
+detached: the upright view pulls each flipped view with the lag-or-margin weight of
+Eq.~\eqref{eq:weight}, and the flipped view closest to the label pulls the upright view wherever it is
+more accurate. At test time, only the upright view is used.}
+\label{fig:overview}
+\end{figure*}
+
+\subsection{Three Supervised Views}
+\label{sec:views}
+
+Each image is passed through the network upright and flipped horizontally and vertically, and the
+flipped outputs are flipped back to the upright frame as in Eq.~\eqref{eq:views}. Every view is
+supervised with the host network's own loss:
+\begin{equation}
+\mathcal{L}_{\mathrm{sup}}=\frac13\sum_{k\in\{o,h,v\}}\mathcal{L}_{\mathrm{host}}\big(Z^{k},y\big),
+\label{eq:sup}
+\end{equation}
+where $Z^{k}$ denotes all output maps of view $k$ in the upright frame and $\mathcal{L}_{\mathrm{host}}$
+the supervised loss of the host network, unchanged; the prediction logit $z^{k}$ is formed from $Z^{k}$
+as the host forms it at test time. The factor $\frac13$ keeps the supervised loss at the scale of
+single-view training. On its own, Eq.~\eqref{eq:sup} is a deterministic form of flip augmentation:
+each view is tied to the label, but no view is tied to another.
+
+\subsection{Lag-or-Margin Flip Pulls}
+\label{sec:flippull}
+
+Each flipped view is pulled toward the upright view, its teacher. Following
+Corollary~\ref{cor:lag}, the pull keeps its full strength where the flipped view lags behind the
+upright view, and it is weakened where the flipped view leads:
+\begin{equation}
+w^{k}_i=\begin{cases}1, & e^{k}_i\geq e^{o}_i,\\ \max\big(0,\,1-a\,e^{o}_i\big), & e^{k}_i<e^{o}_i,\end{cases}
+\label{eq:weight}
+\end{equation}
+where $e^{k}_i$ and $e^{o}_i$ denote the errors of the flipped and the upright view at pixel $i$, computed
+without gradient, and $a>0$ is a constant. The pull on flip $k$ averages the weighted consistency loss
+of Eq.~\eqref{eq:bce} over the image:
+\begin{equation}
+\mathcal{C}_k=\frac{1}{HW}\sum_{i} w^{k}_i\,\ell\big(z^{k}_i;p^{o}_i\big),
+\label{eq:flippull}
+\end{equation}
+with the upright probability $p^{o}$ detached.
+
+The constant $a$ follows from the decision threshold. On a leading pixel, the pull moves the flipped
+view away from the label (Corollary~\ref{cor:lag}), and Eq.~\eqref{eq:weight} keeps it in proportion
+to the margin $1-a\,e^{o}$. We ask two things of this margin. First, a pull toward a wrong teacher must
+vanish, $w=0$ whenever $e^{o}>\frac12$, which requires $a\geq2$. Second, a pull toward a correct
+teacher must survive however small its margin, $w>0$ whenever $e^{o}<\frac12$, which requires
+$a\leq2$. Hence $a=2$, and on a leading pixel with a correct teacher, $w=1-2e^{o}=|2p^{o}-1|$ is
+twice the teacher's distance from the threshold, that is, its margin rescaled to $[0,1]$. The constant is thus set by the threshold rather than tuned,
+and Section~\ref{sec:ablation} shows that the results are insensitive to it.
+
+With $a=2$, the pull on a leading pixel is weak. Its strength $w\,(e^{o}-e^{k})$ is at most
+$(1-2e^{o})\,e^{o}\leq\frac18$, against up to one for a supervised step (Fig.~\ref{fig:pull}(c)), and
+it vanishes when the flipped view reaches its teacher, on the correct side of the threshold. It thus
+keeps the two views consistent where both are right, as flip equivariance asks, without reversing a
+decision by itself.
+
+\subsection{Upright Pull}
+\label{sec:uppull}
+
+Eq.~\eqref{eq:weight} lets the upright view teach but never learn, although it is the view that the
+network sees at test time. The upright view is therefore also pulled toward the flipped view closest
+to the label, wherever that view leads:
+\begin{equation}
+\mathcal{U}=\frac{1}{HW}\sum_{i} g_i\,\ell\big(z^{o}_i;p^{\ast}_i\big),\qquad g_i=\mathbf{1}\big[e^{\ast}_i<e^{o}_i\big],
+\label{eq:uppull}
+\end{equation}
+where $p^{\ast}_i$ denotes the detached probability of the flipped view with the smaller error at
+pixel $i$, and $e^{\ast}_i$ its error. By Corollary~\ref{cor:lag}, every pull in Eq.~\eqref{eq:uppull}
+moves the upright view toward the label, so it needs no margin term.
+
+\subsection{Objective and Training}
+\label{sec:objective}
+
+The full objective adds the pulls to the supervised loss:
+\begin{equation}
+\mathcal{L}=\mathcal{L}_{\mathrm{sup}}+\frac{\lambda}{2}\big(\mathcal{C}_h+\mathcal{C}_v\big)+\frac{\lambda}{2}\,\mathcal{U},
+\label{eq:objective}
+\end{equation}
+where $\lambda\geq0$ weighs consistency against supervision. The two flip pulls share $\lambda$, and the
+upright pull receives the weight of one flip pull. The weight is ramped up linearly at the start of
+training,
+\begin{equation}
+\lambda_t=\lambda\,\min\big(1,\,t/t_0\big),
+\label{eq:ramp}
+\end{equation}
+where $t$ counts the training batches and $t_0$ is the length of the ramp; we use $\lambda=0.5$ and
+$t_0=300$.
+
+Three implementation choices keep the views comparable and the memory low. First, the three views of
+an image share one stochastic-depth mask~\cite{huang2016stochastic}, so that their differences reflect
+the flip rather than the random depth. Second, when a host trains at several input scales, FCT is
+applied at every scale. Third, the probabilities $p^{h}$ and $p^{v}$ of Eq.~\eqref{eq:uppull} come
+from passes without gradient that leave the running statistics of batch normalization unchanged. In our
+current implementation, these passes run before the upright pass and the graph of each view is
+released after its backward pass, so only one view's computation graph is held in memory at a time;
+the runs reported in Section~\ref{sec:experiments} computed them after the upright pass, which gives
+the same objective at a higher peak memory. For each image and input scale, FCT thus runs five forward
+passes, three of them with gradients. At test time, the network is applied to the upright image only, exactly as without FCT,
+so FCT changes neither the architecture nor its inference cost.
+
+\subsection{Relation to Other Consistency Rules}
+\label{sec:relation}
+
+Eq.~\eqref{eq:weight} contains the usual rules as special cases or near neighbours, which
+Section~\ref{sec:ablation} compares. With $w=1$ everywhere, $\mathcal{C}_k$ is the unweighted
+transformation consistency of semi-supervised segmentation~\cite{bortsova2019consistency,li2021tcsm},
+applied here to labeled images; by Eq.~\eqref{eq:weights}, it mixes pulls toward and away from the
+label. Confidence thresholding~\cite{sohn2020fixmatch} keeps pulls whose teacher is confident, which
+includes confidently wrong teachers, the case that Corollary~\ref{cor:lag} rules out. Finally, a rule
+can use the label to judge the teacher alone, for example by weighting each pixel by whether and how
+confidently the upright view is correct. Such a rule ignores the student's error, so it cannot tell
+the lagging pixels, where a pull helps, from the leading ones, where it hurts. Of these rules, only FCT
+compares the two errors, as Corollary~\ref{cor:lag} requires.
+% ---- sections/experiments.tex ----
+\section{Experiments}
+\label{sec:experiments}
+
+We test the claims of Sections~\ref{sec:analysis} and~\ref{sec:method} in the order in which they were
+made: FCT improves Polyp-PVT and PraNet-V2 over their own baselines \pend{(ASGNet pending)}, most on
+unseen data (Section~\ref{sec:main}), and a label-aware variant generalizes to six more centres
+(Section~\ref{sec:polypgen}); FCT makes predictions more flip-consistent
+(Section~\ref{sec:flip}); a per-image analysis shows where its gains come from
+(Section~\ref{sec:where}); and a dissection of its components shows
+that its weight acts on the gradient as Corollary~\ref{cor:lag} predicts and that its constant needs no
+tuning (Section~\ref{sec:ablation}).
+Section~\ref{sec:cost} reports its cost.
+
+\subsection{Datasets and Evaluation Protocol}
+\label{sec:setup}
+
+We train on 1,288 images, 800 from Kvasir-SEG~\cite{jha2020kvasir} and 488 from
+CVC-ClinicDB~\cite{bernal2015clinicdb}, drawn from the 1,450-image training split
+of~\cite{fan2020pranet}; none of them appears in a test set. Because this set is smaller than the full
+split, absolute scores are not directly comparable with published ones, and every comparison below is
+between models trained on the same images. We test on the five standard test sets: the test splits of
+Kvasir-SEG (100 images) and CVC-ClinicDB (62), which we call seen, and
+CVC-ColonDB~\cite{tajbakhsh2016colondb} (380), CVC-300~\cite{vazquez2017endoscene} (60) and
+ETIS~\cite{silva2014etis} (196), which are unseen in training. CVC-ColonDB and CVC-300 come from the same
+group as CVC-ClinicDB, whereas ETIS comes from another centre.
+
+We report the mean Dice (mDice) of the evaluation toolbox of~\cite{fan2020pranet}, which Polyp-PVT also
+uses: each predicted map is min-max normalized and binarized at 256 thresholds, and the Dice coefficient
+is averaged over images and thresholds. The flip gap of Eq.~\eqref{eq:flipgap} is computed on the masks
+thresholded at 0.5 at the input resolution of the network, with add-one smoothing so that two empty
+masks agree. Each network is evaluated on the five test sets after every epoch with the per-image Dice
+of the official Polyp-PVT code, and we keep the epoch with the highest five-set mean, for vanilla and
+FCT alike; Section~\ref{sec:main} also reports the gains without this selection.
+
+Each configuration is trained with six random seeds, and vanilla and FCT share each seed. We report
+the mean and standard deviation (SD) over seeds, the mean paired difference with its 95\% confidence
+interval (CI) from the $t$-distribution with five degrees of freedom, and the number of seeds on which
+FCT scores higher. An exact permutation test over all 924 ways of splitting the twelve runs of a
+comparison into two groups of six reaches the same conclusion as the CI for every entry of
+Tables~\ref{tab:main_polyppvt} and~\ref{tab:main_pranetv2}.
+
+\subsection{Implementation Details}
+\label{sec:implementation}
+
+We add FCT to three networks without changing their architectures or retuning their recipes.
+Polyp-PVT~\cite{dong2023polyppvt} uses a PVTv2-B2 encoder~\cite{wang2022pvtv2}. As in its official code,
+it is trained with AdamW, a learning rate of $10^{-4}$, a weight decay of $10^{-4}$, batches of 16 images
+of $352\times352$ pixels, input scales of 0.75, 1 and 1.25, element-wise gradient clipping at 0.5 and 99 epochs, and
+its encoder has a stochastic-depth rate of 0.1; we add mixed precision. Its official recipe applies no orientation
+augmentation by default, and we keep this default, so vanilla Polyp-PVT never sees a flipped image.
+PraNet-V2~\cite{hu2026pranetv2} uses a Res2Net-50 encoder~\cite{gao2021res2net}, which has no stochastic
+depth, and is trained with Adam, a constant learning rate of $10^{-4}$, batches of 8 images and 29
+epochs, with the data pipeline, input scales and mixed precision of Polyp-PVT. ASGNet~\cite{sun2026asgnet} uses a PVTv2-B3 encoder and keeps its own
+recipe: Adam, batches of 40 images accumulated over \pend{eight} parts, 79 epochs at a single scale in full
+precision, a cosine learning-rate schedule, and its own data loader, which applies random horizontal
+flips, crops, rotations, colour changes and label noise. Unlike the other two, ASGNet is therefore
+trained with flip augmentation even without FCT. FCT uses $\lambda=0.5$, set in preliminary runs on
+Polyp-PVT, and $a=2$ for all three networks. Each run uses one \pend{[GPU model]} GPU.
+
+\subsection{Main Results}
+\label{sec:main}
+
+FCT improves the five-set mean Dice of both networks on every seed, and its largest gains are on the
+unseen sets (Tables~\ref{tab:main_polyppvt} and~\ref{tab:main_pranetv2}, Fig.~\ref{fig:seeds}). For
+Polyp-PVT, the five-set mean rises by 0.52 points, with a 95\% CI of $[0.15, 0.90]$, and ETIS gains 1.65
+points $[0.88, 2.42]$ on all six seeds; the gains on the other four sets are positive on average but
+within seed variation. For PraNet-V2, the five-set mean rises by 1.68 points $[0.69, 2.67]$. Its largest
+gains are on ETIS, 3.61 points $[0.23, 6.99]$, and on CVC-ColonDB, 3.01 points $[1.25, 4.77]$ on all six
+seeds, and Kvasir also improves, by 1.69 points $[0.12, 3.26]$. For PraNet-V2, FCT also lowers the SD over
+seeds on every set. No set loses on average for either network; the smallest gains are on CVC-300
+for both networks, $+0.06$ and $+0.04$ points, and on CVC-ClinicDB for PraNet-V2, $+0.03$.
+\pend{For ASGNet, which already trains with random flips, Table~\ref{tab:main_asgnet} will report the same comparison when
+its six seeds finish.}
+
+% ---- tables/main_polyppvt.tex ----
+\begin{table}[t]
+\centering
+\footnotesize
+\setlength{\tabcolsep}{2.6pt}
+\begin{threeparttable}
+\caption{Polyp-PVT (PVTv2-B2) with and without FCT on five polyp test sets: mDice (\%), mean $\pm$ SD over six seeds. Bold: gains whose 95\% CI excludes zero.}
+\label{tab:main_polyppvt}
+\begin{tabular}{@{}l r@{$\,\pm\,$}l r@{$\,\pm\,$}l r r@{, }l c@{}}
+\toprule
+Test set & \multicolumn{2}{c}{Vanilla} & \multicolumn{2}{c}{FCT (ours)} & Gain & \multicolumn{2}{c}{95\% CI} & Seeds \\
+\midrule
+\multicolumn{9}{@{}l}{\textit{Seen}} \\
+\enspace Kvasir & 91.94 & 0.59 & 92.50 & 0.41 & +0.56 & [$-$0.31 & 1.44] & 4/6 \\
+\enspace CVC-ClinicDB & 93.17 & 0.64 & 93.36 & 0.23 & +0.19 & [$-$0.64 & 1.01] & 4/6 \\
+\addlinespace[2pt]
+\multicolumn{9}{@{}l}{\textit{Unseen}} \\
+\enspace CVC-ColonDB & 80.28 & 0.68 & 80.43 & 0.60 & +0.15 & [$-$0.80 & 1.10] & 3/6 \\
+\enspace CVC-300 & 88.79 & 0.86 & 88.85 & 1.10 & +0.06 & [$-$1.39 & 1.51] & 2/6 \\
+\enspace ETIS & 78.61 & 0.29 & 80.26 & 0.65 & \textbf{+1.65} & \textbf{[0.88} & \textbf{2.42]} & 6/6 \\
+\midrule
+Mean & 86.56 & 0.17 & 87.08 & 0.32 & \textbf{+0.52} & \textbf{[0.15} & \textbf{0.90]} & 6/6 \\
+\bottomrule
+\end{tabular}
+\begin{tablenotes}[flushleft]
+\footnotesize
+\item Training set: 1,288 Kvasir and \mbox{CVC-ClinicDB} images; \textit{seen}: test splits of the two training datasets; \textit{unseen}: datasets not used in training. Gain: mean paired difference, FCT minus vanilla with the same seed. 95\% CI: $t$-distribution, five degrees of freedom. Seeds: seeds, of six, on which FCT scores higher. Mean: average over the five test sets.
+\end{tablenotes}
+\end{threeparttable}
+\end{table}
+% ---- tables/main_pranetv2.tex ----
+\begin{table}[t]
+\centering
+\footnotesize
+\setlength{\tabcolsep}{2.6pt}
+\begin{threeparttable}
+\caption{PraNet-V2 (Res2Net-50) with and without FCT on five polyp test sets: mDice (\%), mean $\pm$ SD over six seeds. Bold: gains whose 95\% CI excludes zero.}
+\label{tab:main_pranetv2}
+\begin{tabular}{@{}l r@{$\,\pm\,$}l r@{$\,\pm\,$}l r r@{, }l c@{}}
+\toprule
+Test set & \multicolumn{2}{c}{Vanilla} & \multicolumn{2}{c}{FCT (ours)} & Gain & \multicolumn{2}{c}{95\% CI} & Seeds \\
+\midrule
+\multicolumn{9}{@{}l}{\textit{Seen}} \\
+\enspace Kvasir & 87.94 & 1.46 & 89.63 & 0.55 & \textbf{+1.69} & \textbf{[0.12} & \textbf{3.26]} & 5/6 \\
+\enspace CVC-ClinicDB & 89.80 & 1.30 & 89.83 & 0.86 & +0.03 & [$-$1.31 & 1.38] & 3/6 \\
+\addlinespace[2pt]
+\multicolumn{9}{@{}l}{\textit{Unseen}} \\
+\enspace CVC-ColonDB & 69.91 & 2.30 & 72.92 & 1.27 & \textbf{+3.01} & \textbf{[1.25} & \textbf{4.77]} & 6/6 \\
+\enspace CVC-300 & 87.73 & 2.92 & 87.76 & 1.47 & +0.04 & [$-$3.31 & 3.39] & 3/6 \\
+\enspace ETIS & 67.07 & 1.72 & 70.68 & 1.69 & \textbf{+3.61} & \textbf{[0.23} & \textbf{6.99]} & 5/6 \\
+\midrule
+Mean & 80.49 & 0.93 & 82.17 & 0.64 & \textbf{+1.68} & \textbf{[0.69} & \textbf{2.67]} & 6/6 \\
+\bottomrule
+\end{tabular}
+\begin{tablenotes}[flushleft]
+\footnotesize
+\item Columns and statistics as in Table~\ref{tab:main_polyppvt}.
+\end{tablenotes}
+\end{threeparttable}
+\end{table}
+% ---- tables/main_asgnet.tex ----
+% Placeholder until ASGNet's six seeds finish. Regenerate it then with make_table.py (command in main.tex);
+% the label stays the same, so the references in the text need no change.
+\begin{table}[t]
+\centering
+\footnotesize
+\begin{threeparttable}
+\caption{ASGNet (PVTv2-B3) with and without FCT on five polyp test sets: mDice (\%), mean $\pm$ SD over six seeds. Bold: gains whose 95\% CI excludes zero.}
+\label{tab:main_asgnet}
+\begin{tabular}{@{}c@{}}
+\toprule
+\pend{Pending: the six ASGNet seeds are still training.} \\
+\bottomrule
+\end{tabular}
+\end{threeparttable}
+\end{table}
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=\columnwidth]{figures/fig_seeds.pdf}
+\caption{Paired gains of FCT over vanilla in mDice points: one hollow marker per seed, and the mean
+with its 95\% CI below them. Every seed gains on the five-set mean for both networks, and the largest
+gains are on ETIS and, for PraNet-V2, CVC-ColonDB.}
+\label{fig:seeds}
+\end{figure}
+
+Without epoch selection, the gains remain positive on average but are less certain.
+Fig.~\ref{fig:curves} shows the five-set mean of the
+training-time evaluator after every epoch: the six-seed mean of FCT lies above that of vanilla after 81
+of 99 epochs for Polyp-PVT and after 28 of 29 epochs for PraNet-V2. Averaged over the last ten epochs,
+without any selection, FCT gains $+0.42$ $[-0.03, 0.88]$ and $+2.41$ $[1.40, 3.43]$ points on the
+five-set mean of the two networks, and $+1.52$ $[0.11, 2.93]$ and $+3.71$ $[0.75, 6.68]$ points on
+ETIS (Appendix, Table~\ref{tab:selfree}). At the last epoch alone, neither five-set mean gain has a CI
+above zero: $+0.55$ $[-0.11, 1.22]$ for Polyp-PVT and $+0.49$ $[-1.17, 2.14]$ for PraNet-V2, whose curves
+peak early and decline, so that its last epoch is a poor checkpoint for either arm.
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=\columnwidth]{figures/fig_curves.pdf}
+\caption{Five-set mean Dice of the training-time evaluator after every epoch, without (dashed) and
+with (solid) FCT; mean and SD over six seeds. FCT lies above vanilla through most of training.}
+\label{fig:curves}
+\end{figure}
+
+\subsection{Six More Centres}
+\label{sec:polypgen}
+
+Of the five standard test sets, only ETIS comes from another centre than the training images
+(Section~\ref{sec:setup}). PolypGen~\cite{ali2023polypgen} adds six more centres; we use its 1,411 single-frame images with a
+polyp, none of which took part in training or in selecting a checkpoint. We fixed the analysis before
+scoring any map: the primary result is the mDice pooled over the six centres, every image counted once,
+over all six seeds, and each centre is a secondary result. So far, PolypGen maps exist only for the
+confidence-graded weight, row (h) of Table~\ref{tab:rules}, and not yet for FCT. This label-aware
+variant raises the pooled mDice of Polyp-PVT from 82.14\% to 82.98\%, by 0.84 points $[0.59, 1.09]$, on
+all six seeds, and its gain has a CI above zero on four of the six centres (Table~\ref{tab:polypgen});
+an exact permutation test over the 924 splits of the twelve runs gives $p=0.002$ for the pooled gain.
+\pend{FCT's checkpoints will be scored with the same analysis.}
+
+% ---- tables/tab_polypgen.tex ----
+%% Generated by make_tables_extra.py; do not edit by hand.
+\begin{table}[t]
+\centering
+\footnotesize
+\setlength{\tabcolsep}{3pt}
+\begin{threeparttable}
+\caption{Six more centres (PolypGen): mDice (\%) of vanilla Polyp-PVT and of its confidence-graded variant, row (h) of Table~\ref{tab:rules}, mean $\pm$ SD over six seeds. Bold: gains whose 95\% CI excludes zero.}
+\label{tab:polypgen}
+\begin{tabular}{@{}l c c c c c@{}}
+\toprule
+Centre & Images & Vanilla & Variant (h) & Gain [95\% CI] & Seeds \\
+\midrule
+\enspace C1 & 251 & 86.65$\,\pm\,$0.42 & 87.94$\,\pm\,$0.55 & \textbf{+1.29 [0.71, 1.86]} & 6/6 \\
+\enspace C2 & 270 & 84.60$\,\pm\,$0.47 & 84.31$\,\pm\,$0.64 & $-$0.28 [$-$1.27, 0.70] & 2/6 \\
+\enspace C3 & 455 & 89.93$\,\pm\,$0.24 & 90.46$\,\pm\,$0.20 & \textbf{+0.53 [0.25, 0.81]} & 6/6 \\
+\enspace C4 & 146 & 68.33$\,\pm\,$0.99 & 69.23$\,\pm\,$1.47 & +0.90 [$-$1.63, 3.44] & 4/6 \\
+\enspace C5 & 206 & 65.71$\,\pm\,$1.65 & 67.92$\,\pm\,$1.25 & \textbf{+2.21 [0.38, 4.04]} & 5/6 \\
+\enspace C6 & 83 & 82.88$\,\pm\,$0.29 & 84.23$\,\pm\,$0.45 & \textbf{+1.35 [1.04, 1.65]} & 6/6 \\
+\midrule
+Pooled & 1411 & 82.14$\,\pm\,$0.18 & 82.98$\,\pm\,$0.21 & \textbf{+0.84 [0.59, 1.09]} & 6/6 \\
+\bottomrule
+\end{tabular}
+\begin{tablenotes}[flushleft]
+\footnotesize
+\item Single-frame images with a polyp; none was used in training or in selecting a checkpoint. Pooled: every image of the six centres counted once, the primary result of an analysis fixed before scoring. FCT itself: \pend{pending}.
+\end{tablenotes}
+\end{threeparttable}
+\end{table}
+
+\subsection{Flip Consistency}
+\label{sec:flip}
+
+FCT makes both networks more flip-consistent on every test set (Table~\ref{tab:flipgap}). It lowers the
+five-set mean flip gap from 12.5\% to 7.5\% for Polyp-PVT and from 15.6\% to 10.2\% for PraNet-V2, and
+the flip gap on the training images by 84\% and 76\%. The reduction holds on every seed and in every
+row of the table. Two observations qualify it. First, flip consistency is not accuracy: the largest
+reduction on a test set, 70\% for Polyp-PVT on CVC-ClinicDB, comes with almost no change in Dice, and CVC-ColonDB and
+ETIS remain the least consistent sets after FCT. Second, training on flipped images lowers the flip
+gap by itself. In preliminary single runs of Polyp-PVT, supervising the three views without any pull,
+row~(b) of Table~\ref{tab:rules}, reached a five-set flip gap of 8.2\%, and the official random flip and
+rotation augmentation reached 6.8\%, below that of FCT; yet the five-set mean Dice of the latter,
+85.75\%, was below that of every vanilla seed. A lower flip gap alone therefore does not explain the gains of FCT, and we
+read it as a symptom that the views are tied together, not as the cause of the gains.
+
+% ---- tables/tab_flipgap.tex ----
+%% Generated by make_tables_extra.py; do not edit by hand.
+\begin{table}[t]
+\centering
+\footnotesize
+\setlength{\tabcolsep}{3.6pt}
+\begin{threeparttable}
+\caption{Flip gap (\%) of the predicted masks without and with FCT on each test set and on the training images, and its relative change. Means over six seeds; lower is better.}
+\label{tab:flipgap}
+\begin{tabular}{@{}l rrr rrr@{}}
+\toprule
+& \multicolumn{3}{c}{Polyp-PVT} & \multicolumn{3}{c}{PraNet-V2} \\
+\cmidrule(lr){2-4} \cmidrule(l){5-7}
+Images & Vanilla & FCT & Change & Vanilla & FCT & Change \\
+\midrule
+\multicolumn{7}{@{}l}{\textit{Seen}} \\
+\enspace Kvasir & 6.3 & 4.1 & $-$35\% & 8.8 & 5.1 & $-$42\% \\
+\enspace CVC-ClinicDB & 12.4 & 3.7 & $-$70\% & 13.1 & 5.9 & $-$55\% \\
+\addlinespace[2pt]
+\multicolumn{7}{@{}l}{\textit{Unseen}} \\
+\enspace CVC-ColonDB & 16.9 & 11.3 & $-$33\% & 20.4 & 14.8 & $-$27\% \\
+\enspace CVC-300 & 9.1 & 5.1 & $-$43\% & 9.8 & 6.2 & $-$37\% \\
+\enspace ETIS & 17.8 & 13.2 & $-$26\% & 25.8 & 19.2 & $-$26\% \\
+\midrule
+Five-set mean & 12.5 & 7.5 & $-$40\% & 15.6 & 10.2 & $-$34\% \\
+Training images & 6.3 & 1.0 & $-$84\% & 8.5 & 2.0 & $-$76\% \\
+\bottomrule
+\end{tabular}
+\begin{tablenotes}[flushleft]
+\footnotesize
+\item Flip gap: one minus the Dice overlap of the binary masks predicted for an image and for its flipped copy, flipped back, averaged over horizontal and vertical flips and over images. FCT lowers it on every seed, in every row.
+\end{tablenotes}
+\end{threeparttable}
+\end{table}
+
+\subsection{Where Do the Gains Come From?}
+\label{sec:where}
+
+For PraNet-V2, the gains on the unseen sets are spread over many images: on ETIS, the 176 images
+outside the ten largest gains and the ten largest losses contribute 2.94 of its 3.61 points. For
+Polyp-PVT, they are more concentrated: on ETIS, the ten images with the largest gains contribute 1.78
+points, more than the net gain of 1.65, and the other 176 images contribute 0.79.
+Table~\ref{tab:errors} breaks the errors down at a threshold of 0.5 on the per-image min-max-normalized
+maps. The two networks gain in different ways. PraNet-V2 fails less
+often: the number of images with a Dice below 0.1 falls from 31.8 to 25.0 per run on ETIS and from 56.5
+to 47.5 on CVC-ColonDB. Polyp-PVT fails about as often with FCT as without, 10.3 and 10.5 images per run
+on ETIS; it gains instead by predicting less false-positive area, 1.31 instead of 1.52 times the polyp
+area. In two cases, small polyps carry much of the gain:
+the quarter of images with the smallest polyps gains 5.46 points on ETIS for Polyp-PVT and 6.16 points
+on CVC-ColonDB for PraNet-V2. The pattern is not general: on ETIS, the smallest polyps gain 2.70 points
+for PraNet-V2 and the next quarter 6.05, and on CVC-300 the smallest polyps lose with both networks. These
+breakdowns are descriptive, and with four size groups per set and network, some differences are
+expected by chance.
+
+% ---- tables/tab_errors.tex ----
+%% Generated by make_tables_extra.py; do not edit by hand.
+\begin{table}[t]
+\centering
+\footnotesize
+\setlength{\tabcolsep}{1.9pt}
+\begin{threeparttable}
+\caption{Where the gains come from on the unseen test sets, vanilla $\to$ FCT: failures, missed and false-positive area, and the gain on the smallest polyps. Means over six seeds.}
+\label{tab:errors}
+\begin{tabular}{@{}l c c c c c@{}}
+\toprule
+Test set & Gain & Failures & Missed area & False-pos.\ area & Smallest \\
+\midrule
+\multicolumn{6}{@{}l}{\textit{Polyp-PVT}} \\
+\enspace CVC-ColonDB & +0.15 & 15.0 $\to$ 15.3 & 0.18 $\to$ 0.16 & 0.66 $\to$ 0.73 & $-$1.75 \\
+\enspace CVC-300 & +0.06 & 0.2 $\to$ 0.0 & 0.06 $\to$ 0.06 & 0.23 $\to$ 0.27 & $-$2.38 \\
+\enspace ETIS & +1.65 & 10.5 $\to$ 10.3 & 0.12 $\to$ 0.11 & 1.52 $\to$ 1.31 & +5.46 \\
+\addlinespace[2pt]
+\multicolumn{6}{@{}l}{\textit{PraNet-V2}} \\
+\enspace CVC-ColonDB & +3.01 & 56.5 $\to$ 47.5 & 0.27 $\to$ 0.25 & 0.33 $\to$ 0.26 & +6.16 \\
+\enspace CVC-300 & +0.04 & 0.2 $\to$ 0.0 & 0.05 $\to$ 0.06 & 0.25 $\to$ 0.23 & $-$1.85 \\
+\enspace ETIS & +3.61 & 31.8 $\to$ 25.0 & 0.26 $\to$ 0.22 & 0.82 $\to$ 0.86 & +2.70 \\
+\bottomrule
+\end{tabular}
+\begin{tablenotes}[flushleft]
+\footnotesize
+\item Gain: mDice points. Failures: images per run with Dice below 0.1 for the mask thresholded at 0.5 after per-image min-max normalization. Missed and false-positive area: at the same threshold, as fractions of the polyp area. Smallest: mDice gain on the quarter of the set with the smallest polyps.
+\end{tablenotes}
+\end{threeparttable}
+\end{table}
+
+Fig.~\ref{fig:qual} shows examples. Without FCT, PraNet-V2 misses the polyp in rows 1, 2 and 4, and
+Polyp-PVT adds spurious regions in rows 1--3; with FCT, both predictions concentrate on the polyp. The last row shows the image on which FCT loses most: with FCT, Polyp-PVT adds a false region,
+and PraNet-V2 misses the polyp.
+
+\begin{figure*}[t]
+\centering
+\includegraphics[width=0.94\textwidth]{figures/fig_qual.pdf}
+\caption{Examples from the unseen sets: image, label, and the maps predicted by each network without
+and with FCT (seed 1), each with its mDice. Rows 1--4: four of the twelve unseen-set images with the
+largest gains, averaged over six seeds and both networks. Row 5: the image with the largest loss.}
+\label{fig:qual}
+\end{figure*}
+
+\subsection{Ablation Studies}
+\label{sec:ablation}
+
+\textit{Component dissection.} FCT has four components: the three supervised views of
+Eq.~\eqref{eq:sup}, the pulls on the flipped views, their label-aware weight of Eq.~\eqref{eq:weight},
+and the upright pull of Eq.~\eqref{eq:uppull}. Table~\ref{tab:rules} dissects them on Polyp-PVT, against
+the same vanilla runs throughout. Row (b) supervises the three views without any pull. It is the
+flip-augmentation control, and row (b) minus vanilla is the gain of the flips alone. Rows (c)--(e) add
+to row (b) the upright pull alone, the weighted flip pulls alone, and both, which is FCT. Their
+differences from row (b) decompose the gain of FCT over flip augmentation, and comparing row (e) with the
+two single additions shows whether the pulls add up. Rows (f) and (g) change only the weight function of
+FCT, to unweighted flip pulls and to the lag gate without its margin. We fixed the protocol before
+seeing these rows: rows (b) and (c) are trained with six seeds, and rows (f) and (g) with three seeds
+first, extended to six only if they land near FCT. \pend{Rows (b), (c), (f) and (g) are being trained;
+ASGNet, whose own recipe already includes random flips (Table~\ref{tab:main_asgnet}), adds a second test
+of FCT beyond flip augmentation.} Preliminary single unseeded runs of row (b) and of unweighted flip
+pulls without the upright pull reached five-set means of 86.56\% and 87.06\% and ETIS scores of 80.78\%
+and 80.49\%, against 87.08\% and 80.26\% for FCT over six seeds; single runs cannot rank variants that
+differ by less than a point. With six seeds, the paired CI of the difference between two variants spans
+about $\pm0.4$ to $\pm0.7$ points on the five-set mean, and with three seeds about 2.4 times more, so
+small effects will not be resolved.
+
+% ---- tables/tab_rules.tex ----
+%% Generated by make_tables_extra.py; do not edit by hand.
+\begin{table*}[t]
+\centering
+\footnotesize
+\setlength{\tabcolsep}{2.6pt}
+\begin{threeparttable}
+\caption{Component dissection of FCT on Polyp-PVT: paired mDice gains (points, 95\% CI), the effect of each component, test sets improved, flip gap and gradient alignment. Bold: CIs that exclude zero.}
+\label{tab:rules}
+\begin{tabular}{@{}l c c c c c c c c c@{}}
+\toprule
+Variant & Views & Flip pulls & Upright pull & Mean gain & ETIS gain & Component effect & Sets & Flip gap (\%) & Cosine \\
+\midrule
+\multicolumn{10}{@{}l}{\textit{Building FCT on the three supervised views}} \\
+(a) Vanilla & -- & -- & -- & -- & -- & -- & -- & 12.5 & -- \\
+(b) Three views & \checkmark & -- & -- & \pend{pending} & \pend{pending} & -- & \pend{--} & \pend{--} & \pend{--} \\
+(c) + upright pull & \checkmark & -- & \checkmark & \pend{pending} & \pend{pending} & \pend{pending} & \pend{--} & \pend{--} & \pend{--} \\
+(d) + flip pulls & \checkmark & Eq.~\eqref{eq:weight} & -- & +0.47 [$-$0.02, 0.96] & \textbf{+1.97 [1.06, 2.87]} & \pend{pending} & 4/5 & 7.5 & 0.53 \\
+(e) + both (FCT) & \checkmark & Eq.~\eqref{eq:weight} & \checkmark & \textbf{+0.52 [0.15, 0.90]} & \textbf{+1.65 [0.88, 2.42]} & \pend{pending} & 5/5 & 7.5 & 0.53 \\
+\addlinespace[2pt]
+\multicolumn{10}{@{}l}{\textit{Changing the weight function of FCT}} \\
+(f) FCT, $w=1$ (3 seeds) & \checkmark & $w=1$ & \checkmark & \pend{pending} & \pend{pending} & \pend{pending} & \pend{--} & \pend{--} & \pend{--} \\
+(g) FCT, lag only (3 seeds) & \checkmark & lag only & \checkmark & \pend{pending} & \pend{pending} & \pend{pending} & \pend{--} & \pend{--} & \pend{--} \\
+\addlinespace[2pt]
+\multicolumn{10}{@{}l}{\textit{Another label-aware weight, without the upright pull}} \\
+(h) Graded weight & \checkmark & graded & -- & \textbf{+0.40 [0.13, 0.68]} & \textbf{+1.56 [0.53, 2.60]} & +0.06 [$-$0.60, 0.73] & 3/5 & 7.7 & 0.26 \\
+\bottomrule
+\end{tabular}
+\begin{tablenotes}[flushleft]
+\footnotesize
+\item Six seeds unless the row says otherwise. Mean and ETIS gain: over vanilla with the same seeds. Component effect, on the five-set mean, paired by seed: for rows (c)--(e), the row minus row (b), so the effect of the pulls added to the three views; for rows (f) and (g), FCT minus the row, the effect of FCT\textquotesingle s weight function; for row (h), row (d) minus row (h). Sets: test sets, of five, with a positive mean gain. Cosine: between the gradient of the flip pulls and that of the rest of the objective, measured every 50 batches and averaged over training and seeds; for row (e), the rest includes the upright pull. Lag only: $w=1$ where the flipped view lags and $0$ where it leads ($a\to\infty$). Graded: the confidence-graded weight of Section~\ref{sec:ablation}.
+\end{tablenotes}
+\end{threeparttable}
+\end{table*}
+
+The completed rows already answer two questions. First, the upright pull adds little on top of the
+weighted flip pulls: FCT minus row (d) is $+0.05$ $[-0.36, 0.47]$ points on the five-set mean, although FCT is the only variant
+so far that improves all five sets on average. Second, the form of the label-aware weight barely moves
+Dice. Row (h) replaces the lag-or-margin weight with the confidence-graded weight sketched in
+Section~\ref{sec:relation}, which keeps a weight of 1 where the upright view is correct, raises it to
+$1+p^{o}$ on missed polyp pixels and lowers it to $1-p^{o}$ on false-positive pixels; row (d) minus row
+(h) is $+0.06$ $[-0.60, 0.73]$. Rows (d), (e) and (h) all improve ETIS with CIs above zero.
+
+Their gradients, however, differ sharply. The gradient of the lag-or-margin pulls has a cosine of 0.53
+with the gradient of the rest of the objective, against 0.26 for the confidence-graded weight, and it is
+about a third smaller relative to it: the ratio of the two gradients' norms is 0.08, against 0.12. The gap holds throughout training
+(Fig.~\ref{fig:cos}) and on every seed: the cosine ranges over $[0.47, 0.56]$ for rows (d) and (e) and
+over $[0.18, 0.33]$ for row (h). This is the effect that Eq.~\eqref{eq:weights} predicts. The
+confidence-graded weight keeps full weight on the pulls of leading flipped views, which point away from
+the label (Corollary~\ref{cor:lag}), and even raises the weight where the upright view misses a polyp.
+Leading pixels are common: in the runs where we logged them, Polyp-PVT with $a<2$ and PraNet-V2, a flipped
+view leads the upright view on about 44\% of its pixels at the end of training, although this is a share
+of pixels, not of the gradient. \pend{Row (c) will show
+whether the weight's effect on the gradient carries over to Dice.}
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=\columnwidth]{figures/fig_cos.pdf}
+\caption{Cosine between the gradient of the flip pulls and that of the rest of the objective during
+training of Polyp-PVT, for rows (d), (e) and (h) of Table~\ref{tab:rules}; per-epoch means, smoothed over five epochs,
+with the SD over six seeds. The lag-or-margin weight doubles the alignment of the consistency gradient
+with the rest of the objective.}
+\label{fig:cos}
+\end{figure}
+
+\textit{Constant $a$.} The results are insensitive to $a$, so the constant needs no tuning
+(Table~\ref{tab:sweep}; row (g) of Table~\ref{tab:rules}, \pend{pending}, adds the limit $a\to\infty$,
+which keeps only the lagging pulls). Every value in $\{0.5, 1, 1.5, 2\}$ improves ETIS by 1.6 to 2.1 points, and none
+differs significantly from $a=2$ on the five-set mean. The value $a=2$ is the only one that improves all
+five sets on average, but this distinction is within seed variation. These runs do not fully explain
+the insensitivity. The case that $a=2$ removes, a flipped view that leads a wrong upright view, is rare: it
+arises on only 0.16\% of the pixels at the end of training (Polyp-PVT, $a<2$) and on 0.24\% (PraNet-V2).
+But $a$ also scales the pull on the far more frequent leading pixels with a correct upright view, and
+this change, too, leaves Dice unchanged within seed variation.
+
+% ---- tables/tab_sweep.tex ----
+%% Generated by make_tables_extra.py; do not edit by hand.
+\begin{table}[t]
+\centering
+\footnotesize
+\setlength{\tabcolsep}{2.2pt}
+\begin{threeparttable}
+\caption{Sensitivity to the constant $a$ of Eq.~\eqref{eq:weight} on Polyp-PVT: paired mDice gains over vanilla and over $a=2$ (points, six seeds, 95\% CI). Bold: CIs that exclude zero.}
+\label{tab:sweep}
+\begin{tabular}{@{}l c c c c@{}}
+\toprule
+$a$ & Mean gain & ETIS gain & Sets & $a=2$ minus row \\
+\midrule
+0.5 & \textbf{+0.51 [0.30, 0.73]} & \textbf{+2.15 [1.37, 2.92]} & 3/5 & +0.01 [$-$0.47, 0.49] \\
+1 & +0.33 [$-$0.02, 0.67] & \textbf{+1.58 [0.40, 2.77]} & 3/5 & +0.19 [$-$0.26, 0.65] \\
+1.5 & \textbf{+0.36 [0.02, 0.71]} & \textbf{+1.83 [0.83, 2.82]} & 3/5 & +0.16 [$-$0.24, 0.56] \\
+2 (FCT) & \textbf{+0.52 [0.15, 0.90]} & \textbf{+1.65 [0.88, 2.42]} & 5/5 & -- \\
+\bottomrule
+\end{tabular}
+\begin{tablenotes}[flushleft]
+\footnotesize
+\item Gains over vanilla on the five-set mean and on ETIS. Sets: test sets, of five, with a positive mean gain. Last column: paired difference on the five-set mean between $a=2$ and the row.
+\end{tablenotes}
+\end{threeparttable}
+\end{table}
+
+\subsection{Cost}
+\label{sec:cost}
+
+FCT multiplies the training time per epoch by 3.6 for Polyp-PVT and by 3.3 for PraNet-V2
+(Table~\ref{tab:cost}). This matches its five forward and three backward passes for each image and input scale,
+which cost $11/3\approx3.7$ times a single view if a backward pass costs twice a forward pass. Without
+the upright pull, the two passes without gradient are not needed, and the measured factor drops to
+3.0. Inference
+is unchanged: the trained network is the host network, applied once to the upright image.
+
+% ---- tables/tab_cost.tex ----
+%% Generated by make_tables_extra.py; do not edit by hand.
+\begin{table}[t]
+\centering
+\footnotesize
+\begin{threeparttable}
+\caption{Cost of FCT: training time per epoch (minutes, median over six seeds) and inference cost.}
+\label{tab:cost}
+\begin{tabular}{@{}l c c c c@{}}
+\toprule
+Network & Vanilla & FCT & Ratio & Inference \\
+\midrule
+Polyp-PVT & 0.56 & 2.01 & 3.6$\times$ & unchanged \\
+PraNet-V2 & 0.93 & 3.11 & 3.3$\times$ & unchanged \\
+Polyp-PVT, no upright pull & 0.56 & 1.67 & 3.0$\times$ & unchanged \\
+\bottomrule
+\end{tabular}
+\begin{tablenotes}[flushleft]
+\footnotesize
+\item Training time excludes the per-epoch evaluation. One \pend{[GPU model]} GPU per run. No upright pull: row (d) of Table~\ref{tab:rules}. Inference: the same network, applied once to the upright image.
+\end{tablenotes}
+\end{threeparttable}
+\end{table}
+% ---- sections/discussion.tex ----
+\section{Discussion and Limitations}
+\label{sec:discussion}
+
+\textit{Why the unseen sets?} FCT gains most on ETIS, the test set from another centre, and, for
+PraNet-V2, on CVC-ColonDB: the two sets on which both networks are least accurate and least
+flip-consistent. One explanation is the hypothesis of Section~\ref{sec:intro}: tying the views
+together discourages cues that change under a flip, and such cues are unlikely to transfer to a new
+centre. Our data support this only indirectly. The flip gap falls on every set, but its fall does not
+predict where Dice rises, and a single run with flip and rotation augmentation lowered it without
+any gain. The experiments do not yet separate three candidate causes of the gains: training on the
+supervised flipped views, flip consistency itself, and a consistency gradient better aligned with
+supervision. Preliminary single runs (Section~\ref{sec:ablation}) leave open that the first two account
+for much of the gain; the pending rows of the component dissection (Table~\ref{tab:rules}) are
+designed to settle this.
+
+\textit{Scope of the analysis.} Proposition~\ref{prop:identity} needs a binary label and a
+cross-entropy or squared-error pull. It applies to each class of a multi-label task, one class against
+the rest, but not directly to a softmax over several classes, where the two error vectors need not be
+parallel. Soft labels also break it, since the two errors may then lie on opposite sides of the target;
+FCT therefore binarizes the label at 0.5 when it computes the weights, including at rescaled input
+sizes, where interpolation softens the mask boundary. The analysis also stops at the logits: it does
+not describe how the network shares the per-pixel pulls through its parameters.
+
+\textit{Cost.} FCT multiplies the training time by about 3.5 and leaves inference unchanged. Without
+the upright pull, the factor drops to three (Table~\ref{tab:cost}) at a similar accuracy
+(Table~\ref{tab:rules}); applying FCT to part of each batch would lower it further.
+
+\textit{Limits of the evidence.} The evidence has five limits. First, it covers two networks
+\pend{(three with ASGNet)} and one training set of 1,288 images; of the five standard test sets, only
+ETIS comes from another centre, and on the six PolypGen centres only the confidence-graded variant
+has been tested so far. Second, the reported epoch is selected on the test sets. The selection is the
+same for both arms, and the gains remain positive on average without it but are not significant at the
+last epoch (Fig.~\ref{fig:curves}); the absolute scores are optimistic. Third, the weight was developed
+over several preliminary variants scored on the same five test sets, so these sets also guided its
+design. The confidence-graded weight, for instance, was carried to six seeds because of its result on
+seed~1, which row (h) of Table~\ref{tab:rules} includes; on seeds 2--6 alone, its five-set mean gain is
+$+0.32$ $[0.08, 0.56]$. The gain of FCT is smallest on seed~1, $+0.18$ points, and is $+0.59$
+$[0.15, 1.03]$ on seeds 2--6. Fourth, six seeds resolve gains of about half a point on the five-set
+mean, but not the smaller effects on single sets, whose CIs are up to several points wide. Fifth,
+$\lambda$ was set on Polyp-PVT and not retuned for the other networks, and four rows of the component
+dissection are still pending.
+% ---- sections/conclusion.tex ----
+\section{Conclusion}
+\label{sec:conclusion}
+
+We asked which view should teach when a segmentation network is trained to agree with itself under
+flips. For binary labels, an identity answers it: a consistency pull toward a detached teacher view is
+the supervised pull, rescaled by one minus the ratio of the two views' errors. The pull therefore moves
+the student toward the label only where the teacher is closer to it. We turned this lag condition into
+FCT, which supervises an image and its two flips and lets a view teach another only where the label
+allows it, with a constant fixed by the decision threshold. FCT improved the five-set mean Dice of
+Polyp-PVT and PraNet-V2 on every seed and gained most on the unseen ETIS set. It also made the
+predictions more flip-consistent and left inference unchanged. Future work will extend the identity to
+multi-class segmentation and to other transformations, such as rotations, and test FCT itself on the
+six PolypGen centres, where a label-aware variant already improves on every seed.
+
+% ASGNet's main table, when all six seeds finish (it overwrites the placeholder tables/main_asgnet.tex).
+% make_table.py needs a summary over seeds 1-6, so score them together first, in the Polyp-PVT repo:
+%   python seed_summary.py --seeds 1 2 3 4 5 6 --arms ASGNET_VANILLA ASGNET_S3LMUP > seeds_asgnet.out
+%   python tables/make_table.py <repo>/seeds_asgnet.out ASGNET_VANILLA ASGNET_S3LMUP ASGNet PVTv2-B3 tab:main_asgnet tables/main_asgnet.tex
+
+% ---- sections/appendix.tex ----
+\appendices
+
+\section{Per-Seed Results}
+\label{app:perseed}
+
+Table~\ref{tab:perseed} lists the mDice of every run behind Tables~\ref{tab:main_polyppvt}
+and~\ref{tab:main_pranetv2}. FCT scores higher than vanilla with the same seed on the five-set mean
+for all twelve pairs, and on ETIS for eleven of them.
+
+% ---- tables/tab_perseed.tex ----
+%% Generated by make_tables_extra.py; do not edit by hand.
+\begin{table*}[t]
+\centering
+\footnotesize
+\setlength{\tabcolsep}{2.7pt}
+\begin{threeparttable}
+\caption{Per-seed mDice (\%) of vanilla and FCT on the five test sets, both networks.}
+\label{tab:perseed}
+\begin{tabular}{@{}c cccccc c cccccc@{}}
+\toprule
+& \multicolumn{6}{c}{Polyp-PVT: vanilla / FCT} & & \multicolumn{6}{c}{PraNet-V2: vanilla / FCT} \\
+\cmidrule(lr){2-7} \cmidrule(l){9-14}
+Seed & Kvasir & Clinic & Colon & 300 & ETIS & Mean & & Kvasir & Clinic & Colon & 300 & ETIS & Mean \\
+\midrule
+1 & 92.0/92.0 & 93.3/\textbf{93.5} & 79.4/\textbf{80.4} & 88.5/87.0 & 78.6/\textbf{79.8} & 86.4/\textbf{86.5} &  & 89.0/\textbf{89.7} & 91.6/90.4 & 71.8/\textbf{72.0} & 89.1/\textbf{89.7} & 65.7/\textbf{71.4} & 81.4/\textbf{82.6} \\
+2 & 91.0/\textbf{92.7} & 94.0/93.2 & 80.8/79.9 & 89.0/88.3 & 78.3/\textbf{81.3} & 86.6/\textbf{87.1} &  & 87.9/\textbf{89.2} & 90.0/89.1 & 70.1/\textbf{73.8} & 88.8/\textbf{89.5} & 69.4/69.2 & 81.3/\textbf{82.2} \\
+3 & 92.4/\textbf{92.8} & 92.1/\textbf{93.7} & 81.0/81.0 & 87.3/\textbf{89.9} & 78.7/\textbf{80.1} & 86.3/\textbf{87.5} &  & 85.4/\textbf{89.4} & 88.6/\textbf{90.2} & 72.1/\textbf{74.4} & 82.2/\textbf{87.6} & 68.8/\textbf{69.8} & 79.4/\textbf{82.3} \\
+4 & 92.7/92.1 & 93.5/93.1 & 79.9/\textbf{81.3} & 88.9/88.8 & 78.7/\textbf{79.6} & 86.7/\textbf{87.0} &  & 88.1/\textbf{90.7} & 90.4/\textbf{91.1} & 69.7/\textbf{72.6} & 88.8/87.0 & 65.3/\textbf{73.7} & 80.5/\textbf{83.0} \\
+5 & 91.8/\textbf{93.0} & 93.4/\textbf{93.5} & 79.7/\textbf{79.9} & 89.9/89.7 & 78.3/\textbf{80.1} & 86.6/\textbf{87.2} &  & 87.6/\textbf{89.4} & 90.2/89.0 & 70.0/\textbf{73.7} & 90.4/86.3 & 67.0/\textbf{69.5} & 81.0/\textbf{81.6} \\
+6 & 91.6/\textbf{92.4} & 92.7/\textbf{93.1} & 80.8/80.1 & 89.1/\textbf{89.4} & 79.1/\textbf{80.8} & 86.7/\textbf{87.2} &  & 89.7/89.4 & 88.0/\textbf{89.2} & 65.7/\textbf{71.0} & 87.0/86.6 & 66.2/\textbf{70.5} & 79.3/\textbf{81.3} \\
+\bottomrule
+\end{tabular}
+\begin{tablenotes}[flushleft]
+\footnotesize
+\item Bold: FCT above vanilla with the same seed (before rounding). Clinic: CVC-ClinicDB; Colon: CVC-ColonDB; 300: CVC-300.
+\end{tablenotes}
+\end{threeparttable}
+\end{table*}
+
+\section{Gains Without Epoch Selection}
+\label{app:selfree}
+
+Table~\ref{tab:selfree} repeats the comparison of Section~\ref{sec:main} without epoch selection,
+with the evaluator that runs during training. At the last epoch, the ETIS gain of Polyp-PVT is the only
+entry of the table whose CI excludes zero; averaged over the last ten epochs, the gains on the five-set mean and on ETIS are
+positive for both networks, and their CIs exclude zero except for the five-set mean of Polyp-PVT.
+For PraNet-V2, the last epoch lies well past the peak of both arms (Fig.~\ref{fig:curves}).
+
+% ---- tables/tab_selfree.tex ----
+%% Generated by make_tables_extra.py; do not edit by hand.
+\begin{table}[t]
+\centering
+\footnotesize
+\setlength{\tabcolsep}{2.4pt}
+\begin{threeparttable}
+\caption{Gains of FCT without epoch selection: the training-time evaluator at the last epoch and averaged over the last ten epochs (points, 95\% CI, seeds better). Bold: CIs that exclude zero.}
+\label{tab:selfree}
+\begin{tabular}{@{}l c c@{}}
+\toprule
+Epochs & Five-set mean & ETIS \\
+\midrule
+\multicolumn{3}{@{}l}{\textit{Polyp-PVT}} \\
+\enspace Last epoch & +0.55 [$-$0.11, 1.22], 4/6 & \textbf{+2.60 [0.84, 4.36], 6/6} \\
+\enspace Last 10 epochs & +0.42 [$-$0.03, 0.88], 5/6 & \textbf{+1.52 [0.11, 2.93], 4/6} \\
+\multicolumn{3}{@{}l}{\textit{PraNet-V2}} \\
+\enspace Last epoch & +0.49 [$-$1.17, 2.14], 4/6 & $-$0.18 [$-$2.20, 1.84], 2/6 \\
+\enspace Last 10 epochs & \textbf{+2.41 [1.40, 3.43], 6/6} & \textbf{+3.71 [0.75, 6.68], 5/6} \\
+\bottomrule
+\end{tabular}
+\begin{tablenotes}[flushleft]
+\footnotesize
+\item Training-time evaluator: Dice of the min-max normalized probability map, per image, as in the official Polyp-PVT code. The six-seed mean of FCT is above that of vanilla after 81 of 99 epochs for Polyp-PVT and 28 of 29 for PraNet-V2.
+\end{tablenotes}
+\end{threeparttable}
+\end{table}
+
+% ---- bibliography (from main.bbl) ----
+% Generated by IEEEtran.bst, version: 1.14 (2015/08/26)
+\begin{thebibliography}{10}
+\providecommand{\url}[1]{#1}
+\csname url@samestyle\endcsname
+\providecommand{\newblock}{\relax}
+\providecommand{\bibinfo}[2]{#2}
+\providecommand{\BIBentrySTDinterwordspacing}{\spaceskip=0pt\relax}
+\providecommand{\BIBentryALTinterwordstretchfactor}{4}
+\providecommand{\BIBentryALTinterwordspacing}{\spaceskip=\fontdimen2\font plus
+\BIBentryALTinterwordstretchfactor\fontdimen3\font minus
+  \fontdimen4\font\relax}
+\providecommand{\BIBforeignlanguage}[2]{{%
+\expandafter\ifx\csname l@#1\endcsname\relax
+\typeout{** WARNING: IEEEtran.bst: No hyphenation pattern has been}%
+\typeout{** loaded for the language `#1'. Using the pattern for}%
+\typeout{** the default language instead.}%
+\else
+\language=\csname l@#1\endcsname
+\fi
+#2}}
+\providecommand{\BIBdecl}{\relax}
+\BIBdecl
+
+\bibitem{ali2023polypgen}
+S.~Ali, D.~Jha, N.~Ghatwary, S.~Realdon, R.~Cannizzaro, O.~E. Salem,
+  D.~Lamarque, C.~Daul, M.~A. Riegler, K.~V. Anonsen, A.~Petlund, P.~Halvorsen,
+  J.~Rittscher, T.~de~Lange, and J.~E. East, ``A multi-centre polyp detection
+  and segmentation dataset for generalisability assessment,'' \emph{Scientific
+  Data}, vol.~10, no.~1, 2023.
+
+\bibitem{ali2024endocv}
+S.~Ali, N.~Ghatwary, D.~Jha, E.~Isik-Polat, G.~Polat, C.~Yang, W.~Li,
+  A.~Galdran, M.-{\'A}.~G. Ballester, V.~Thambawita, S.~Hicks, S.~Poudel, S.-W.
+  Lee, Z.~Jin, T.~Gan, C.~Yu, J.~Yan, D.~Yeo, H.~Lee, N.~K. Tomar, M.~Haithami,
+  A.~Ahmed, M.~A. Riegler, C.~Daul, P.~Halvorsen, J.~Rittscher, O.~E. Salem,
+  D.~Lamarque, R.~Cannizzaro, S.~Realdon, T.~de~Lange, and J.~E. East,
+  ``Assessing generalisability of deep learning-based polyp detection and
+  segmentation methods through a computer vision challenge,'' \emph{Scientific
+  Reports}, vol.~14, no.~1, 2024.
+
+\bibitem{siegel2024cancer}
+R.~L. Siegel, A.~N. Giaquinto, and A.~Jemal, ``Cancer statistics, 2024,''
+  \emph{CA: A Cancer Journal for Clinicians}, vol.~74, no.~1, pp. 12--49, 2024.
+
+\bibitem{vanrijn2006miss}
+J.~C. van Rijn, J.~B. Reitsma, J.~Stoker, P.~M. Bossuyt, S.~J. van Deventer,
+  and E.~Dekker, ``Polyp miss rate determined by tandem colonoscopy: A
+  systematic review,'' \emph{The American Journal of Gastroenterology}, vol.
+  101, no.~2, pp. 343--350, 2006.
+
+\bibitem{fan2020pranet}
+D.-P. Fan, G.-P. Ji, T.~Zhou, G.~Chen, H.~Fu, J.~Shen, and L.~Shao, ``{PraNet}:
+  Parallel reverse attention network for polyp segmentation,'' in \emph{Medical
+  Image Computing and Computer Assisted Intervention -- MICCAI 2020}, 2020, pp.
+  263--273.
+
+\bibitem{wei2021sanet}
+J.~Wei, Y.~Hu, R.~Zhang, Z.~Li, S.~K. Zhou, and S.~Cui, ``Shallow attention
+  network for polyp segmentation,'' in \emph{Medical Image Computing and
+  Computer Assisted Intervention -- MICCAI 2021}, 2021, pp. 699--708.
+
+\bibitem{dong2023polyppvt}
+B.~Dong, W.~Wang, D.-P. Fan, J.~Li, H.~Fu, and L.~Shao, ``{Polyp-PVT}: Polyp
+  segmentation with pyramid vision transformers,'' \emph{CAAI Artificial
+  Intelligence Research}, p. 9150015, 2023.
+
+\bibitem{hu2026pranetv2}
+B.-C. Hu, G.-P. Ji, D.~Shao, and D.-P. Fan, ``{PraNet-V2}: Dual-supervised
+  reverse attention for medical image segmentation,'' \emph{Computational
+  Visual Media}, vol.~12, no.~2, pp. 493--500, 2026.
+
+\bibitem{sun2026asgnet}
+Y.~Sun, H.~Zhang, J.~Qian, J.~Yang, and L.~Luo, ``{ASGNet}: Adaptive spectrum
+  guidance network for automatic polyp segmentation,'' \emph{IEEE Transactions
+  on Circuits and Systems for Video Technology}, vol.~36, no.~8, pp.
+  11\,876--11\,887, 2026.
+
+\bibitem{laine2017temporal}
+S.~Laine and T.~Aila, ``Temporal ensembling for semi-supervised learning,'' in
+  \emph{International Conference on Learning Representations (ICLR)}, 2017.
+
+\bibitem{tarvainen2017mean}
+A.~Tarvainen and H.~Valpola, ``Mean teachers are better role models:
+  Weight-averaged consistency targets improve semi-supervised deep learning
+  results,'' in \emph{Advances in Neural Information Processing Systems
+  (NeurIPS)}, vol.~30, 2017.
+
+\bibitem{sohn2020fixmatch}
+K.~Sohn, D.~Berthelot, C.-L. Li, Z.~Zhang, N.~Carlini, E.~D. Cubuk, A.~Kurakin,
+  H.~Zhang, and C.~Raffel, ``{FixMatch}: Simplifying semi-supervised learning
+  with consistency and confidence,'' in \emph{Advances in Neural Information
+  Processing Systems (NeurIPS)}, vol.~33, 2020.
+
+\bibitem{bortsova2019consistency}
+G.~Bortsova, F.~Dubost, L.~Hogeweg, I.~Katramados, and M.~de~Bruijne,
+  ``Semi-supervised medical image segmentation via learning consistency under
+  transformations,'' in \emph{Medical Image Computing and Computer Assisted
+  Intervention -- MICCAI 2019}, 2019, pp. 810--818.
+
+\bibitem{li2021tcsm}
+X.~Li, L.~Yu, H.~Chen, C.-W. Fu, L.~Xing, and P.-A. Heng,
+  ``Transformation-consistent self-ensembling model for semisupervised medical
+  image segmentation,'' \emph{IEEE Transactions on Neural Networks and Learning
+  Systems}, vol.~32, no.~2, pp. 523--534, 2021.
+
+\bibitem{hendrycks2020augmix}
+D.~Hendrycks, N.~Mu, E.~D. Cubuk, B.~Zoph, J.~Gilmer, and B.~Lakshminarayanan,
+  ``{AugMix}: A simple data processing method to improve robustness and
+  uncertainty,'' in \emph{International Conference on Learning Representations
+  (ICLR)}, 2020.
+
+\bibitem{liang2021rdrop}
+X.~Liang, L.~Wu, J.~Li, Y.~Wang, Q.~Meng, T.~Qin, W.~Chen, M.~Zhang, and T.-Y.
+  Liu, ``{R-Drop}: Regularized dropout for neural networks,'' in \emph{Advances
+  in Neural Information Processing Systems (NeurIPS)}, vol.~34, 2021.
+
+\bibitem{furlanello2018born}
+T.~Furlanello, Z.~C. Lipton, M.~Tschannen, L.~Itti, and A.~Anandkumar, ``Born
+  again neural networks,'' in \emph{International Conference on Machine
+  Learning (ICML)}, 2018.
+
+\bibitem{tang2020understanding}
+J.~Tang, R.~Shivanna, Z.~Zhao, D.~Lin, A.~Singh, E.~H. Chi, and S.~Jain,
+  ``Understanding and improving knowledge distillation,'' arXiv:2002.03532,
+  2020.
+
+\bibitem{yuan2020revisiting}
+L.~Yuan, F.~E. Tay, G.~Li, T.~Wang, and J.~Feng, ``Revisiting knowledge
+  distillation via label smoothing regularization,'' in \emph{2020 IEEE/CVF
+  Conference on Computer Vision and Pattern Recognition (CVPR)}, 2020, pp.
+  3902--3910.
+
+\bibitem{kim2021uacanet}
+T.~Kim, H.~Lee, and D.~Kim, ``{UACANet}: Uncertainty augmented context
+  attention for polyp segmentation,'' in \emph{Proceedings of the 29th ACM
+  International Conference on Multimedia}, 2021, pp. 2167--2175.
+
+\bibitem{xiao2024ctnet}
+B.~Xiao, J.~Hu, W.~Li, C.-M. Pun, and X.~Bi, ``{CTNet}: Contrastive transformer
+  network for polyp segmentation,'' \emph{IEEE Transactions on Cybernetics},
+  vol.~54, no.~9, pp. 5040--5053, 2024.
+
+\bibitem{shao2024polyper}
+H.~Shao, Y.~Zhang, and Q.~Hou, ``{Polyper}: Boundary sensitive polyp
+  segmentation,'' \emph{Proceedings of the AAAI Conference on Artificial
+  Intelligence}, vol.~38, no.~5, pp. 4731--4739, 2024.
+
+\bibitem{du2025umnet}
+X.~Du, X.~Xu, J.~Chen, X.~Zhang, L.~Li, H.~Liu, and S.~Li, ``{UM-Net}:
+  Rethinking {ICGNet} for polyp segmentation with uncertainty modeling,''
+  \emph{Medical Image Analysis}, vol.~99, p. 103347, 2025.
+
+\bibitem{li2024asps}
+H.~Li, D.~Zhang, J.~Yao, L.~Han, Z.~Li, and J.~Han, ``{ASPS}: Augmented
+  {Segment Anything Model} for polyp segmentation,'' in \emph{Medical Image
+  Computing and Computer Assisted Intervention -- MICCAI 2024}, 2024, pp.
+  118--128.
+
+\bibitem{cai2024vanet}
+L.~Cai, L.~Chen, J.~Huang, Y.~Wang, and Y.~Zhang, ``Know your orientation: A
+  viewpoint-aware framework for polyp segmentation,'' \emph{Medical Image
+  Analysis}, vol.~97, p. 103288, 2024.
+
+\bibitem{jha2020kvasir}
+D.~Jha, P.~H. Smedsrud, M.~A. Riegler, P.~Halvorsen, T.~de~Lange, D.~Johansen,
+  and H.~D. Johansen, ``{Kvasir-SEG}: A segmented polyp dataset,'' in
+  \emph{International Conference on Multimedia Modeling (MMM)}, 2020, pp.
+  451--462.
+
+\bibitem{bernal2015clinicdb}
+J.~Bernal, F.~J. S{\'a}nchez, G.~Fern{\'a}ndez-Esparrach, D.~Gil,
+  C.~Rodr{\'i}guez, and F.~Vilari{\~n}o, ``{WM-DOVA} maps for accurate polyp
+  highlighting in colonoscopy: Validation vs. saliency maps from physicians,''
+  \emph{Computerized Medical Imaging and Graphics}, vol.~43, pp. 99--111, 2015.
+
+\bibitem{tajbakhsh2016colondb}
+N.~Tajbakhsh, S.~R. Gurudu, and J.~Liang, ``Automated polyp detection in
+  colonoscopy videos using shape and context information,'' \emph{IEEE
+  Transactions on Medical Imaging}, vol.~35, no.~2, pp. 630--644, 2016.
+
+\bibitem{vazquez2017endoscene}
+D.~V{\'a}zquez, J.~Bernal, F.~J. S{\'a}nchez, G.~Fern{\'a}ndez-Esparrach, A.~M.
+  L{\'o}pez, A.~Romero, M.~Drozdzal, and A.~Courville, ``A benchmark for
+  endoluminal scene segmentation of colonoscopy images,'' \emph{Journal of
+  Healthcare Engineering}, vol. 2017, pp. 1--9, 2017.
+
+\bibitem{silva2014etis}
+J.~Silva, A.~Histace, O.~Romain, X.~Dray, and B.~Granado, ``Toward embedded
+  detection of polyps in {WCE} images for early diagnosis of colorectal
+  cancer,'' \emph{International Journal of Computer Assisted Radiology and
+  Surgery}, vol.~9, no.~2, pp. 283--293, 2014.
+
+\bibitem{zhou2023dgsurvey}
+K.~Zhou, Z.~Liu, Y.~Qiao, T.~Xiang, and C.~C. Loy, ``Domain generalization: A
+  survey,'' \emph{IEEE Transactions on Pattern Analysis and Machine
+  Intelligence}, vol.~45, pp. 4396--4415, 2023.
+
+\bibitem{liu2020saml}
+Q.~Liu, Q.~Dou, and P.-A. Heng, ``Shape-aware meta-learning for generalizing
+  prostate {MRI} segmentation to unseen domains,'' in \emph{Medical Image
+  Computing and Computer Assisted Intervention -- MICCAI 2020}, 2020, pp.
+  475--485.
+
+\bibitem{liu2021feddg}
+Q.~Liu, C.~Chen, J.~Qin, Q.~Dou, and P.-A. Heng, ``{FedDG}: Federated domain
+  generalization on medical image segmentation via episodic learning in
+  continuous frequency space,'' in \emph{2021 IEEE/CVF Conference on Computer
+  Vision and Pattern Recognition (CVPR)}, 2021, pp. 1013--1023.
+
+\bibitem{zhang2024illumination}
+Z.~Zhang, Y.~Li, and B.-S. Shin, ``Generalizable polyp segmentation via
+  randomized global illumination augmentation,'' \emph{IEEE Journal of
+  Biomedical and Health Informatics}, vol.~28, no.~4, pp. 2138--2151, 2024.
+
+\bibitem{lu2025dclps}
+Z.~Lu, Y.~Zhang, Y.~Zhou, Y.~Wu, and T.~Zhou, ``Domain-interactive contrastive
+  learning and prototype-guided self-training for cross-domain polyp
+  segmentation,'' \emph{IEEE Transactions on Medical Imaging}, vol.~44, no.~9,
+  pp. 3563--3573, 2025.
+
+\bibitem{xie2020uda}
+Q.~Xie, Z.~Dai, E.~Hovy, M.-T. Luong, and Q.~V. Le, ``Unsupervised data
+  augmentation for consistency training,'' in \emph{Advances in Neural
+  Information Processing Systems (NeurIPS)}, vol.~33, 2020.
+
+\bibitem{ouali2020cct}
+Y.~Ouali, C.~Hudelot, and M.~Tami, ``Semi-supervised semantic segmentation with
+  cross-consistency training,'' in \emph{2020 IEEE/CVF Conference on Computer
+  Vision and Pattern Recognition (CVPR)}, 2020, pp. 12\,671--12\,681.
+
+\bibitem{chen2021cps}
+X.~Chen, Y.~Yuan, G.~Zeng, and J.~Wang, ``Semi-supervised semantic segmentation
+  with cross pseudo supervision,'' in \emph{2021 IEEE/CVF Conference on
+  Computer Vision and Pattern Recognition (CVPR)}, 2021, pp. 2613--2622.
+
+\bibitem{yang2023unimatch}
+L.~Yang, L.~Qi, L.~Feng, W.~Zhang, and Y.~Shi, ``Revisiting weak-to-strong
+  consistency in semi-supervised semantic segmentation,'' in \emph{2023
+  IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR)}, 2023,
+  pp. 7236--7246.
+
+\bibitem{liu2025tracoco}
+Y.~Liu, Y.~Tian, C.~Wang, Y.~Chen, F.~Liu, V.~Belagiannis, and G.~Carneiro,
+  ``Translation consistent semi-supervised segmentation for {3D} medical
+  images,'' \emph{IEEE Transactions on Medical Imaging}, vol.~44, no.~2, pp.
+  952--968, 2025.
+
+\bibitem{yu2019uamt}
+L.~Yu, S.~Wang, X.~Li, C.-W. Fu, and P.-A. Heng, ``Uncertainty-aware
+  self-ensembling model for semi-supervised {3D} left atrium segmentation,'' in
+  \emph{Medical Image Computing and Computer Assisted Intervention -- MICCAI
+  2019}, 2019, pp. 605--613.
+
+\bibitem{xu2023acmt}
+Z.~Xu, Y.~Wang, D.~Lu, X.~Luo, J.~Yan, Y.~Zheng, and R.~K.-y. Tong,
+  ``Ambiguity-selective consistency regularization for mean-teacher
+  semi-supervised medical image segmentation,'' \emph{Medical Image Analysis},
+  vol.~88, p. 102880, 2023.
+
+\bibitem{chi2024abd}
+H.~Chi, J.~Pang, B.~Zhang, and W.~Liu, ``Adaptive bidirectional displacement
+  for semi-supervised medical image segmentation,'' in \emph{2024 IEEE/CVF
+  Conference on Computer Vision and Pattern Recognition (CVPR)}, 2024, pp.
+  4070--4080.
+
+\bibitem{wu2023aclnet}
+H.~Wu, W.~Xie, J.~Lin, and X.~Guo, ``{ACL-Net}: Semi-supervised polyp
+  segmentation via affinity contrastive learning,'' \emph{Proceedings of the
+  AAAI Conference on Artificial Intelligence}, vol.~37, no.~3, pp. 2812--2820,
+  2023.
+
+\bibitem{yang2023dac}
+S.~Yang, Y.~Dong, R.~Ward, I.~S. Dhillon, S.~Sanghavi, and Q.~Lei, ``Sample
+  efficiency of data augmentation consistency regularization,'' in
+  \emph{International Conference on Artificial Intelligence and Statistics
+  (AISTATS)}, vol. 206, 2023, pp. 3825--3853.
+
+\bibitem{cohen2016gcnn}
+T.~S. Cohen and M.~Welling, ``Group equivariant convolutional networks,'' in
+  \emph{International Conference on Machine Learning (ICML)}, 2016.
+
+\bibitem{veeling2018rotation}
+B.~S. Veeling, J.~Linmans, J.~Winkens, T.~Cohen, and M.~Welling, ``Rotation
+  equivariant {CNNs} for digital pathology,'' in \emph{Medical Image Computing
+  and Computer Assisted Intervention -- MICCAI 2018}, 2018, pp. 210--218.
+
+\bibitem{wang2020seam}
+Y.~Wang, J.~Zhang, M.~Kan, S.~Shan, and X.~Chen, ``Self-supervised equivariant
+  attention mechanism for weakly supervised semantic segmentation,'' in
+  \emph{2020 IEEE/CVF Conference on Computer Vision and Pattern Recognition
+  (CVPR)}, 2020, pp. 12\,272--12\,281.
+
+\bibitem{wang2019tta}
+G.~Wang, W.~Li, M.~Aertsen, J.~Deprest, S.~Ourselin, and T.~Vercauteren,
+  ``Aleatoric uncertainty estimation with test-time augmentation for medical
+  image segmentation with convolutional neural networks,''
+  \emph{Neurocomputing}, vol. 338, pp. 34--45, 2019.
+
+\bibitem{hinton2015distilling}
+G.~Hinton, O.~Vinyals, and J.~Dean, ``Distilling the knowledge in a neural
+  network,'' arXiv:1503.02531, 2015.
+
+\bibitem{zhang2019byot}
+L.~Zhang, J.~Song, A.~Gao, J.~Chen, C.~Bao, and K.~Ma, ``Be your own teacher:
+  Improve the performance of convolutional neural networks via self
+  distillation,'' in \emph{2019 IEEE/CVF International Conference on Computer
+  Vision (ICCV)}, 2019, pp. 3712--3721.
+
+\bibitem{kim2021pskd}
+K.~Kim, B.~Ji, D.~Yoon, and S.~Hwang, ``Self-knowledge distillation with
+  progressive refinement of targets,'' in \emph{2021 IEEE/CVF International
+  Conference on Computer Vision (ICCV)}, 2021, pp. 6547--6556.
+
+\bibitem{lee2023sddropout}
+H.~Lee, Y.~Park, H.~Seo, and M.~Kang, ``Self-knowledge distillation via
+  dropout,'' \emph{Computer Vision and Image Understanding}, vol. 233, p.
+  103720, 2023.
+
+\bibitem{xu2019ddgsd}
+T.-B. Xu and C.-L. Liu, ``Data-distortion guided self-distillation for deep
+  neural networks,'' \emph{Proceedings of the AAAI Conference on Artificial
+  Intelligence}, vol.~33, no.~01, pp. 5565--5572, 2019.
+
+\bibitem{jeong2025selfdistill}
+H.~Jeong and H.~W. Chung, ``Rethinking self-distillation: Label averaging and
+  enhanced soft label refinement with partial labels,'' in \emph{International
+  Conference on Learning Representations (ICLR)}, 2025.
+
+\bibitem{zhao2022dkd}
+B.~Zhao, Q.~Cui, R.~Song, Y.~Qiu, and J.~Liang, ``Decoupled knowledge
+  distillation,'' in \emph{2022 IEEE/CVF Conference on Computer Vision and
+  Pattern Recognition (CVPR)}, 2022, pp. 11\,943--11\,952.
+
+\bibitem{wen2021preparing}
+T.~Wen, S.~Lai, and X.~Qian, ``Preparing lessons: Improve knowledge
+  distillation with better supervision,'' \emph{Neurocomputing}, vol. 454, pp.
+  25--33, 2021.
+
+\bibitem{sun2025rld}
+W.~Sun, D.~Chen, S.~Lyu, G.~Chen, C.~Chen, and C.~Wang, ``Knowledge
+  distillation with refined logits,'' in \emph{2025 IEEE/CVF International
+  Conference on Computer Vision (ICCV)}, 2025, pp. 1110--1119.
+
+\bibitem{lan2025labelrevision}
+W.~Lan, Y.-m. Cheung, Q.~Xu, B.~Liu, Z.~Hu, M.~Li, and Z.~Chen, ``Improve
+  knowledge distillation via label revision and data selection,'' \emph{IEEE
+  Transactions on Cognitive and Developmental Systems}, vol.~17, no.~6, pp.
+  1377--1388, 2025.
+
+\bibitem{zhang2022camkd}
+H.~Zhang, D.~Chen, and C.~Wang, ``Confidence-aware multi-teacher knowledge
+  distillation,'' in \emph{ICASSP 2022 - 2022 IEEE International Conference on
+  Acoustics, Speech and Signal Processing (ICASSP)}, 2022, pp. 4498--4502.
+
+\bibitem{liu2019skd}
+Y.~Liu, K.~Chen, C.~Liu, Z.~Qin, Z.~Luo, and J.~Wang, ``Structured knowledge
+  distillation for semantic segmentation,'' in \emph{2019 IEEE/CVF Conference
+  on Computer Vision and Pattern Recognition (CVPR)}, 2019, pp. 2599--2608.
+
+\bibitem{lin2017focal}
+T.-Y. Lin, P.~Goyal, R.~Girshick, K.~He, and P.~Dollar, ``Focal loss for dense
+  object detection,'' in \emph{2017 IEEE International Conference on Computer
+  Vision (ICCV)}, 2017, pp. 2999--3007.
+
+\bibitem{shrivastava2016ohem}
+A.~Shrivastava, A.~Gupta, and R.~Girshick, ``Training region-based object
+  detectors with online hard example mining,'' in \emph{2016 IEEE Conference on
+  Computer Vision and Pattern Recognition (CVPR)}, 2016, pp. 761--769.
+
+\bibitem{wei2020f3net}
+J.~Wei, S.~Wang, and Q.~Huang, ``{F$^3$Net}: Fusion, feedback and focus for
+  salient object detection,'' \emph{Proceedings of the AAAI Conference on
+  Artificial Intelligence}, vol.~34, no.~07, pp. 12\,321--12\,328, 2020.
+
+\bibitem{huang2016stochastic}
+G.~Huang, Y.~Sun, Z.~Liu, D.~Sedra, and K.~Q. Weinberger, ``Deep networks with
+  stochastic depth,'' in \emph{Computer Vision -- ECCV 2016}, 2016, pp.
+  646--661.
+
+\bibitem{wang2022pvtv2}
+W.~Wang, E.~Xie, X.~Li, D.-P. Fan, K.~Song, D.~Liang, T.~Lu, P.~Luo, and
+  L.~Shao, ``{PVT} v2: Improved baselines with pyramid vision transformer,''
+  \emph{Computational Visual Media}, vol.~8, no.~3, pp. 415--424, 2022.
+
+\bibitem{gao2021res2net}
+S.-H. Gao, M.-M. Cheng, K.~Zhao, X.-Y. Zhang, M.-H. Yang, and P.~Torr,
+  ``{Res2Net}: A new multi-scale backbone architecture,'' \emph{IEEE
+  Transactions on Pattern Analysis and Machine Intelligence}, vol.~43, no.~2,
+  pp. 652--662, 2021.
+
+\end{thebibliography}
+
+\end{document}
