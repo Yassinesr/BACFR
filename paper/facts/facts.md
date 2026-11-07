@@ -49,6 +49,13 @@
 - CVC-300  vanilla 0.8773±0.0292  arm 0.8776±0.0147  diff +0.0004 [-0.0331, +0.0339]  p_t 0.978  p_perm 0.983  3/6
 - ETIS     vanilla 0.6707±0.0172  arm 0.7068±0.0169  diff +0.0361 [+0.0023, +0.0699]  p_t 0.041  p_perm 0.004  5/6
 - mean     vanilla 0.8049±0.0093  arm 0.8217±0.0064  diff +0.0168 [+0.0069, +0.0267]  p_t 0.007  p_perm 0.004  6/6
+## asgnet_s3lmup
+- Kvasir   vanilla 0.9086±0.0015  arm 0.9080±0.0033  diff -0.0006 [-0.0046, +0.0034]  p_t 0.722  p_perm 0.714  1/6
+- ClinicDB vanilla 0.9109±0.0111  arm 0.9087±0.0075  diff -0.0021 [-0.0096, +0.0053]  p_t 0.495  p_perm 0.710  2/6
+- ColonDB  vanilla 0.8041±0.0071  arm 0.8098±0.0104  diff +0.0057 [-0.0072, +0.0185]  p_t 0.309  p_perm 0.292  4/6
+- CVC-300  vanilla 0.8940±0.0041  arm 0.8896±0.0097  diff -0.0044 [-0.0150, +0.0062]  p_t 0.336  p_perm 0.318  3/6
+- ETIS     vanilla 0.7744±0.0123  arm 0.7912±0.0085  diff +0.0169 [+0.0008, +0.0330]  p_t 0.043  p_perm 0.015  5/6
+- mean     vanilla 0.8584±0.0042  arm 0.8615±0.0033  diff +0.0031 [+0.0000, +0.0061]  p_t 0.049  p_perm 0.203  5/6
 
 ## head to head (points of Dice x100 not applied; fractions)
 - S3LMUP - S3LM: mean +0.0005 [-0.0036, +0.0047] 3/6 | ETIS -0.0032 [-0.0167, +0.0103] 2/6
@@ -73,10 +80,10 @@
 - S3                 n=1  train 0.7  CVC-300 6.0  CVC-ClinicDB 5.4  Kvasir 4.8  CVC-ColonDB 11.2  ETIS-LaribPolypDB 13.5  test_mean 8.2
 - every seed lower: {"S3LMUP": {"train": true, "CVC-300": true, "CVC-ClinicDB": true, "Kvasir": true, "CVC-ColonDB": true, "ETIS-LaribPolypDB": true, "test_mean": true}, "PRANETV2_S3LMUP": {"train": true, "CVC-300": true, "CVC-ClinicDB": true, "Kvasir": true, "CVC-ColonDB": true, "ETIS-LaribPolypDB": true, "test_mean": true}}
 
-## time (min/epoch, median over seeds): {"PVT_VANILLA": 1.39, "S3LMUP": 2.85, "S3LM": 2.51, "S3SIG": 2.48, "PRANETV2_VANILLA": 1.72, "PRANETV2_S3LMUP": 3.89}
-## gradient cosine (mean over logged steps and seeds): {"S3LMUP": 0.528, "S3LM": 0.532, "S3SIG": 0.262, "PRANETV2_S3LMUP": 0.404, "S3F (1 run)": 0.223}
-## |g_cons|/|g_sup|: {"S3LMUP": 0.08, "S3LM": 0.082, "S3SIG": 0.117, "PRANETV2_S3LMUP": 0.051, "S3F (1 run)": 0.125}
-## final counters (EMA, mean over seeds): {"S3LMUP": {"up": 0.6133, "lead": NaN, "wl": NaN}, "PRANETV2_S3LMUP": {"up": 0.6061, "lead": 0.4396, "wl": 0.0024}}
+## time (min/epoch, median over seeds): {"PVT_VANILLA": 1.39, "S3LMUP": 2.85, "S3LM": 2.51, "S3SIG": 2.48, "PRANETV2_VANILLA": 1.72, "PRANETV2_S3LMUP": 3.89, "ASGNET_VANILLA": 3.02, "ASGNET_S3LMUP": 5.78}
+## gradient cosine (mean over logged steps and seeds): {"S3LMUP": 0.528, "S3LM": 0.532, "S3SIG": 0.262, "PRANETV2_S3LMUP": 0.404, "ASGNET_S3LMUP": 0.202, "S3F (1 run)": 0.223}
+## |g_cons|/|g_sup|: {"S3LMUP": 0.08, "S3LM": 0.082, "S3SIG": 0.117, "PRANETV2_S3LMUP": 0.051, "ASGNET_S3LMUP": 0.017, "S3F (1 run)": 0.125}
+## final counters (EMA, mean over seeds): {"S3LMUP": {"up": 0.6133, "lead": NaN, "wl": NaN}, "PRANETV2_S3LMUP": {"up": 0.6061, "lead": 0.4396, "wl": 0.0024}, "ASGNET_S3LMUP": {"up": 0.6313, "lead": 0.4534, "wl": 0.0024}}
 
 ## selection-free (training-time evaluator, Dice points)
 - Polyp-PVT, last epoch: Kvasir +0.62 [-0.05, +1.29] 5/6  ClinicDB +0.57 [-0.82, +1.96] 4/6  ColonDB -0.36 [-1.60, +0.88] 2/6  CVC-300 -0.66 [-2.14, +0.83] 1/6  ETIS +2.60 [+0.84, +4.36] 6/6  mean +0.55 [-0.11, +1.22] 4/6
@@ -85,3 +92,6 @@
 - PraNet-V2, last epoch: Kvasir +0.93 [+0.35, +1.50] 6/6  ClinicDB +0.11 [-1.41, +1.62] 4/6  ColonDB +1.96 [-0.66, +4.58] 4/6  CVC-300 -0.38 [-5.11, +4.35] 2/6  ETIS -0.18 [-2.20, +1.84] 2/6  mean +0.49 [-1.17, +2.14] 4/6
 - PraNet-V2, mean of last 10 epochs: Kvasir +1.20 [+0.26, +2.14] 6/6  ClinicDB +0.99 [+0.57, +1.40] 6/6  ColonDB +4.63 [+3.26, +6.00] 6/6  CVC-300 +1.53 [-1.04, +4.09] 4/6  ETIS +3.71 [+0.75, +6.68] 5/6  mean +2.41 [+1.40, +3.43] 6/6
 - PraNet-V2 best epochs vanilla [10, 7, 6, 9, 7, 10] FCT [12, 4, 6, 19, 10, 7] (of 29)
+- ASGNet, last epoch: Kvasir +0.04 [-0.58, +0.66] 3/6  ClinicDB -0.54 [-1.78, +0.70] 2/6  ColonDB +0.42 [-1.52, +2.36] 3/6  CVC-300 -0.97 [-2.71, +0.77] 2/6  ETIS +1.69 [-1.01, +4.39] 4/6  mean +0.13 [-0.91, +1.17] 3/6
+- ASGNet, mean of last 10 epochs: Kvasir -0.02 [-0.55, +0.52] 3/6  ClinicDB -0.59 [-1.86, +0.68] 1/6  ColonDB +0.40 [-0.81, +1.60] 3/6  CVC-300 -0.72 [-2.57, +1.13] 2/6  ETIS +1.99 [-0.26, +4.24] 4/6  mean +0.21 [-0.59, +1.01] 4/6
+- ASGNet best epochs vanilla [30, 18, 76, 35, 53, 74] FCT [49, 58, 71, 45, 50, 44] (of 79)

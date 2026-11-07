@@ -69,16 +69,17 @@ objective: it multiplies the training time by about 3.5 and adds nothing at infe
 best of our knowledge, FCT is the first rule that uses the label to decide, pixel by pixel and
 across views of one network, which view teaches.
 
-We add FCT, without retuning, to \pend{three} segmentation networks of different design:
+We add FCT, without retuning, to three segmentation networks of different design:
 Polyp-PVT~\cite{dong2023polyppvt}, built on a pyramid vision transformer;
 PraNet-V2~\cite{hu2026pranetv2}, a convolutional network with dual-supervised reverse attention;
-\pend{and ASGNet~\cite{sun2026asgnet}, which guides its features with spectral cues}. Each
+and ASGNet~\cite{sun2026asgnet}, which guides its features with spectral cues and already trains
+with random flips. Each
 network is trained with and without FCT under six paired random seeds and tested on five public
-test sets, three of which are unseen in training. FCT improves the five-set mean Dice on every
-seed \pend{for every network}. The largest gains are on ETIS, +1.65 and +3.61 points for
-Polyp-PVT and PraNet-V2, and on \mbox{CVC-ColonDB} for PraNet-V2, +3.01 points, all with paired
-95\% confidence intervals above zero. FCT also lowers the five-set mean flip gap by 40\% and
-34\%, respectively. On six more centres from the PolypGen benchmark~\cite{ali2023polypgen}, a
+test sets, three of which are unseen in training. FCT improves ETIS for all three networks, by
++1.65, +3.61 and +1.69 points, and \mbox{CVC-ColonDB} for PraNet-V2, by +3.01 points, all with paired
+95\% confidence intervals above zero. It raises the five-set mean Dice on every seed for Polyp-PVT
+and PraNet-V2, and on five of six for ASGNet, whose gain is borderline. FCT also lowers the five-set
+mean flip gap of Polyp-PVT and PraNet-V2 by 40\% and 34\%, respectively. On six more centres from the PolypGen benchmark~\cite{ali2023polypgen}, a
 label-aware variant improves the pooled Dice on every seed \pend{(FCT itself is pending)}. A
 component-by-component dissection relates these gains to the three
 supervised views, the pulls, their weight and the upright pull \pend{(four of its rows are still
@@ -92,8 +93,8 @@ depends on which view is closer to the label.
 \item We derive from this identity FCT, a label-aware flip-consistency rule whose single
 constant is set by the decision threshold. It plugs into any binary segmentation network and
 adds no cost at inference.
-\item We evaluate FCT on two architectures \pend{(three with ASGNet)}, five test sets and six
-paired seeds with confidence intervals, and dissect it component by component. It raises the
-five-set mean Dice of both networks on every seed, most on ETIS, and makes predictions markedly
+\item We evaluate FCT on three architectures, five test sets and six paired seeds with confidence
+intervals, and dissect it component by component. It improves ETIS for all three networks, raises
+the five-set mean Dice on every seed for two of them, and makes the predictions of both markedly
 more flip-consistent.
 \end{itemize}

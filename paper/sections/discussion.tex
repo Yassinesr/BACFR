@@ -1,9 +1,9 @@
 \section{Discussion and Limitations}
 \label{sec:discussion}
 
-\textit{Why the unseen sets?} FCT gains most on ETIS, the test set from another centre, and, for
-PraNet-V2, on CVC-ColonDB: the two sets on which both networks are least accurate and least
-flip-consistent. One explanation is the hypothesis of Section~\ref{sec:intro}: tying the views
+\textit{Why the unseen sets?} For all three networks, FCT gains most on ETIS, the test set from
+another centre, and, for PraNet-V2, it also gains on CVC-ColonDB. These are the two sets on which every
+network is least accurate, and on which Polyp-PVT and PraNet-V2 are least flip-consistent. One explanation is the hypothesis of Section~\ref{sec:intro}: tying the views
 together discourages cues that change under a flip, and such cues are unlikely to transfer to a new
 centre. Our data support this only indirectly. The flip gap falls on every set, but its fall does not
 predict where Dice rises, and a single run with flip and rotation augmentation lowered it without
@@ -25,8 +25,8 @@ not describe how the network shares the per-pixel pulls through its parameters.
 the upright pull, the factor drops to three (Table~\ref{tab:cost}) at a similar accuracy
 (Table~\ref{tab:rules}); applying FCT to part of each batch would lower it further.
 
-\textit{Limits of the evidence.} The evidence has five limits. First, it covers two networks
-\pend{(three with ASGNet)} and one training set of 1,288 images; of the five standard test sets, only
+\textit{Limits of the evidence.} The evidence has five limits. First, it covers three networks
+and one training set of 1,288 images; of the five standard test sets, only
 ETIS comes from another centre, and on the six PolypGen centres only the confidence-graded variant
 has been tested so far. Second, the reported epoch is selected on the test sets. The selection is the
 same for both arms, and the gains remain positive on average without it but are not significant at the

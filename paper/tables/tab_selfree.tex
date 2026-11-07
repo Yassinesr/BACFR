@@ -16,11 +16,14 @@ Epochs & Five-set mean & ETIS \\
 \multicolumn{3}{@{}l}{\textit{PraNet-V2}} \\
 \enspace Last epoch & +0.49 [$-$1.17, 2.14], 4/6 & $-$0.18 [$-$2.20, 1.84], 2/6 \\
 \enspace Last 10 epochs & \textbf{+2.41 [1.40, 3.43], 6/6} & \textbf{+3.71 [0.75, 6.68], 5/6} \\
+\multicolumn{3}{@{}l}{\textit{ASGNet}} \\
+\enspace Last epoch & +0.13 [$-$0.91, 1.17], 3/6 & +1.69 [$-$1.01, 4.39], 4/6 \\
+\enspace Last 10 epochs & +0.21 [$-$0.59, 1.01], 4/6 & +1.99 [$-$0.26, 4.24], 4/6 \\
 \bottomrule
 \end{tabular}
 \begin{tablenotes}[flushleft]
 \footnotesize
-\item Training-time evaluator: Dice of the min-max normalized probability map, per image, as in the official Polyp-PVT code. The six-seed mean of FCT is above that of vanilla after 81 of 99 epochs for Polyp-PVT and 28 of 29 for PraNet-V2.
+\item Training-time evaluator: Dice of the min-max normalized probability map, per image, as in the official Polyp-PVT code. The six-seed mean of FCT is above that of vanilla after 81 of 99 epochs for Polyp-PVT, 28 of 29 epochs for PraNet-V2, 76 of 79 epochs for ASGNet.
 \end{tablenotes}
 \end{threeparttable}
 \end{table}

@@ -35,9 +35,12 @@ def style(ax, grid='x'):
 SETS = ['Kvasir', 'ClinicDB', 'ColonDB', 'CVC-300', 'ETIS', 'mean']
 LABEL = {'Kvasir': 'Kvasir', 'ClinicDB': 'CVC-ClinicDB', 'ColonDB': 'CVC-ColonDB', 'CVC-300': 'CVC-300',
          'ETIS': 'ETIS', 'mean': 'Five-set mean'}
+AQUA = '#1baf7a'                                             # categorical slot 3
 HOSTS = [('Polyp-PVT', 'pvt_s3lmup', 'PVT_VANILLA', 'S3LMUP', BLUE),
          ('PraNet-V2', 'pranet_s3lmup', 'PRANETV2_VANILLA', 'PRANETV2_S3LMUP', ORANGE)]
-fig, axes = plt.subplots(1, 2, figsize=(3.5, 2.35), sharey=True)
+if 'asgnet_s3lmup' in F['runs']:
+    HOSTS.append(('ASGNet', 'asgnet_s3lmup', 'ASGNET_VANILLA', 'ASGNET_S3LMUP', AQUA))
+fig, axes = plt.subplots(1, len(HOSTS), figsize=(3.5, 2.35), sharey=True)
 ypos = {s: -i - (0.5 if s == 'mean' else 0) for i, s in enumerate(SETS)}
 for ax, (name, key, van, fct, color) in zip(axes, HOSTS):
     style(ax)
@@ -58,8 +61,13 @@ for ax, (name, key, van, fct, color) in zip(axes, HOSTS):
 axes[0].set_yticks([ypos[s] for s in SETS])
 axes[0].set_yticklabels([LABEL[s] for s in SETS])
 axes[0].tick_params(axis='y', length=0)
-axes[1].tick_params(axis='y', length=0)
-fig.tight_layout(w_pad=0.6)
+for ax in axes[1:]:
+    ax.tick_params(axis='y', length=0)
+if len(HOSTS) > 2:                      # one shared x label, so three panels fit in a column
+    for ax in axes:
+        ax.set_xlabel('')
+    fig.supxlabel('Gain (mDice points)', fontsize=7.5, y=0.02)
+fig.tight_layout(w_pad=0.4)
 fig.savefig(os.path.join(OUTD, 'fig_seeds.pdf'))
 print('wrote fig_seeds.pdf')
 
@@ -113,9 +121,10 @@ fig.savefig(os.path.join(OUTD, 'fig_cos.pdf'))
 print('wrote fig_cos.pdf; mean over epochs and seeds of the per-epoch means:', summary)
 
 # per-epoch five-set mean Dice, vanilla and FCT, both networks
-fig, axes = plt.subplots(1, 2, figsize=(3.5, 1.85))
+fig, axes = plt.subplots(1, len(HOSTS), figsize=(3.5, 1.85))
 for ax, (name, key, van, fct, color) in zip(axes, HOSTS):
     style(ax, 'y')
+    lo_y, hi_y = 1e9, -1e9
     for arm, ls, lab in [(van, (0, (3, 1.5)), 'vanilla'), (fct, '-', 'FCT')]:
         ev = [parse(arm, s)[1] for s in range(1, 7)]
         n = min(len(e) for e in ev)
@@ -124,13 +133,15 @@ for ax, (name, key, van, fct, color) in zip(axes, HOSTS):
         mu, sd = M.mean(0), M.std(0, ddof=1)
         ax.fill_between(x, mu - sd, mu + sd, color=color, alpha=0.15 if arm == fct else 0.08, linewidth=0)
         ax.plot(x, mu, color=color, lw=1.0, ls=ls, label=lab)
+        skip = max(2, n // 20)                       # leave out the first epochs, still climbing
+        lo_y = min(lo_y, float(mu[skip:].min()) - 1.5)
+        hi_y = max(hi_y, float((mu + sd).max()) + 0.4)
     ax.set_title(name, fontsize=7.5, color=INK, pad=3)
     ax.set_xlabel('Epoch')
     ax.set_xlim(1, n)
-    ax.legend(loc='lower right', handlelength=1.8)
+    ax.set_ylim(lo_y, hi_y)
+    ax.legend(loc='lower right', handlelength=1.6, fontsize=6.2)
 axes[0].set_ylabel('Five-set mean Dice (%)')
-axes[0].set_ylim(76, 88.5)
-axes[1].set_ylim(66, 84)
-fig.tight_layout(w_pad=0.8)
+fig.tight_layout(w_pad=0.5)
 fig.savefig(os.path.join(OUTD, 'fig_curves.pdf'))
 print('wrote fig_curves.pdf')

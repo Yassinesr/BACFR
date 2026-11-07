@@ -51,6 +51,8 @@ S['pvt_s3sig'] = summary('seeds_hosts.out', 'PVT_VANILLA', 'S3SIG')
 for a in ['A05', 'A10', 'A15']:
     S['pvt_' + a.lower()] = summary('seeds_sweep.out', 'PVT_VANILLA', 'S3LMUP_' + a)
 S['pranet_s3lmup'] = summary('seeds_pranetv2.out', 'PRANETV2_VANILLA', 'PRANETV2_S3LMUP')
+if os.path.isfile(os.path.join(R, 'results', 'ASGNET_1288.md')):      # recorded by hand with its seed_summary block
+    S['asgnet_s3lmup'] = summary(os.path.join('results', 'ASGNET_1288.md'), 'ASGNET_VANILLA', 'ASGNET_S3LMUP')
 # Component dissection (Polyp-PVT). An arm is filled in once it has at least three seeds: from
 # full_precision.json when that holds its maps' scores, else from the last seed_summary block that
 # lists it. Its statistics are paired with vanilla on the arm's own seeds (three or six).
@@ -108,12 +110,16 @@ if F['full_precision']:
     changed = []
     for key, rec in S.items():
         sds = rec.get('seeds', list(range(1, 7)))
+        replaced = 0
         for arm in list(rec['runs']):
             if all('%s_s%d' % (arm, sd) in FPJ for sd in sds):
                 old = rec['runs'][arm]
                 new_runs = fp_runs(arm)
                 rec['runs'][arm] = {sd: new_runs[sd] for sd in sds}
                 assert all(abs(old[sd][j] - rec['runs'][arm][sd][j]) < 6e-5 for sd in sds for j in range(6)), (key, arm)
+                replaced += 1
+        if replaced < 2:                # no saved maps here (ASGNet): keep seed_summary's own statistics
+            continue
         van_arm, fct_arm = [a for a in rec['runs'] if 'VANILLA' in a][0], [a for a in rec['runs'] if 'VANILLA' not in a][0]
         for j, name in enumerate(SETS):
             a = [rec['runs'][van_arm][sd][j] for sd in sds]
@@ -220,6 +226,9 @@ def log(arm, seed):
 L = {}
 for arm in ['PVT_VANILLA', 'S3LMUP', 'S3LM', 'S3SIG', 'PRANETV2_VANILLA', 'PRANETV2_S3LMUP']:
     L[arm] = [log(arm, s) for s in range(1, 7)]
+for arm in ['ASGNET_VANILLA', 'ASGNET_S3LMUP']:
+    if all(os.path.isfile(os.path.join(R, 'logs_%s_s%d.txt' % (arm, sd))) for sd in range(1, 7)):
+        L[arm] = [log(arm, sd) for sd in range(1, 7)]
 for key, arm in DISSECT.items():    # dissection arms with flip pulls: gradient statistics over their seeds
     if key in S and arm in ('S3F', 'S3FUP', 'S3RELUP'):
         sds = S[key]['seeds']
@@ -241,7 +250,10 @@ F['grad_cos_per_seed'] = {a: [x['cos'] for x in v] for a, v in L.items() if v[0]
 
 # selection-free: training-time evaluation at the last epoch and over the last 10 epochs
 SF = {}
-for host, v, f in [('Polyp-PVT', 'PVT_VANILLA', 'S3LMUP'), ('PraNet-V2', 'PRANETV2_VANILLA', 'PRANETV2_S3LMUP')]:
+for host, v, f in [('Polyp-PVT', 'PVT_VANILLA', 'S3LMUP'), ('PraNet-V2', 'PRANETV2_VANILLA', 'PRANETV2_S3LMUP'),
+                   ('ASGNet', 'ASGNET_VANILLA', 'ASGNET_S3LMUP')]:
+    if v not in L or f not in L:
+        continue
     SF[host] = {}
     for label, sel in [('last epoch', lambda ev: ev[-1]), ('mean of last 10 epochs',
                        lambda ev: {k: st.mean(e[k] for e in ev[-10:]) for k in SETS})]:
@@ -249,7 +261,11 @@ for host, v, f in [('Polyp-PVT', 'PVT_VANILLA', 'S3LMUP'), ('PraNet-V2', 'PRANET
         SF[host][label] = {k: paired([100 * r[k] for r in a], [100 * r[k] for r in b]) for k in SETS}
     SF[host]['best epoch (vanilla, FCT)'] = ([max(range(len(x['evals'])), key=lambda i: x['evals'][i]['mean']) + 1 for x in L[v]],
                                              [max(range(len(x['evals'])), key=lambda i: x['evals'][i]['mean']) + 1 for x in L[f]])
-    SF[host]['epochs'] = len(L[v][0]['evals'])
+    n_ep = min(len(x['evals']) for x in L[v] + L[f])
+    SF[host]['epochs'] = n_ep
+    mv = [st.mean(x['evals'][e]['mean'] for x in L[v]) for e in range(n_ep)]   # six-seed mean curves
+    mf = [st.mean(x['evals'][e]['mean'] for x in L[f]) for e in range(n_ep)]
+    SF[host]['fct_above'] = sum(b > a for a, b in zip(mv, mf))
 F['selection_free'] = SF
 
 json.dump(F, open(os.path.join(OUT, 'facts.json'), 'w'), indent=1, default=str)

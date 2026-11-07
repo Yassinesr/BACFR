@@ -59,6 +59,11 @@ def row(name, r, indent=True):
 
 
 def main():
+    note = None
+    if '--note' in sys.argv:            # an extra sentence for the table note
+        k = sys.argv.index('--note')
+        note = sys.argv[k + 1]
+        del sys.argv[k:k + 2]
     args = [a for a in sys.argv[1:] if not a.startswith('--')]
     first = '--first' in sys.argv
     path, van, fct, net, backbone, label, out = args
@@ -91,7 +96,7 @@ def main():
                  'with the same seed. 95\\% CI: $t$-distribution, five degrees of freedom. Seeds: seeds, of six, on which '
                  'FCT scores higher. Mean: average over the five test sets.')
     else:
-        L.append('\\item Columns and statistics as in Table~\\ref{tab:main_polyppvt}.')
+        L.append('\\item Columns and statistics as in Table~\\ref{tab:main_polyppvt}.' + (' ' + note if note else ''))
     L += ['\\end{tablenotes}', '\\end{threeparttable}', '\\end{table}']
     open(out, 'w').write('\n'.join(L) + '\n')
     print('wrote', out, '| mean gain %+.2f [%.2f, %.2f], %d/6 seeds' % (100 * rows['mean'][4], 100 * rows['mean'][5], 100 * rows['mean'][6], rows['mean'][7]))

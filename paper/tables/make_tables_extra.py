@@ -246,7 +246,9 @@ def train_min_per_epoch(arm, seed):
     return st.median(rates)
 cost = {}
 for host, v, f in [('Polyp-PVT', 'PVT_VANILLA', 'S3LMUP'), ('PraNet-V2', 'PRANETV2_VANILLA', 'PRANETV2_S3LMUP'),
-                   ('Polyp-PVT, no upright pull', 'PVT_VANILLA', 'S3LM')]:
+                   ('ASGNet', 'ASGNET_VANILLA', 'ASGNET_S3LMUP'), ('Polyp-PVT, no upright pull', 'PVT_VANILLA', 'S3LM')]:
+    if not all(os.path.isfile(os.path.join(REPO, 'logs_%s_s%d.txt' % (a, sd))) for a in (v, f) for sd in range(1, 7)):
+        continue
     a = st.median(train_min_per_epoch(v, s) for s in range(1, 7))
     b = st.median(train_min_per_epoch(f, s) for s in range(1, 7))
     cost[host] = (a, b)
@@ -266,12 +268,11 @@ write('tab_cost.tex', [
 
 # ------------------------------------------------------------------ appendix: no epoch selection
 SF = F['selection_free']
-EP = json.load(open(os.path.join(FD, 'facts_epochs.json')))
 def sfcell(x):
     t = '%s [%s, %s], %d/6' % (num(x['diff'], 2, True), num(x['lo'], 2), num(x['hi'], 2), x['wins'])
     return ('\\textbf{%s}' % t) if (x['lo'] > 0 or x['hi'] < 0) else t
 rows = []
-for host in ['Polyp-PVT', 'PraNet-V2']:
+for host in [h for h in ['Polyp-PVT', 'PraNet-V2', 'ASGNet'] if h in SF]:
     rows.append('\\multicolumn{3}{@{}l}{\\textit{%s}} \\\\' % host)
     for label, key in [('Last epoch', 'last epoch'), ('Last 10 epochs', 'mean of last 10 epochs')]:
         d = SF[host][key]
@@ -285,9 +286,8 @@ write('tab_selfree.tex', [
     'Epochs & Five-set mean & ETIS \\\\', '\\midrule'] + rows + [
     '\\bottomrule', '\\end{tabular}', '\\begin{tablenotes}[flushleft]', '\\footnotesize',
     '\\item Training-time evaluator: Dice of the min-max normalized probability map, per image, as in the official '
-    'Polyp-PVT code. The six-seed mean of FCT is above that of vanilla after %d of %d epochs for Polyp-PVT and %d of %d '
-    'for PraNet-V2.' % (EP['Polyp-PVT']['fct_above'], EP['Polyp-PVT']['epochs'], EP['PraNet-V2']['fct_above'],
-                         EP['PraNet-V2']['epochs']),
+    'Polyp-PVT code. The six-seed mean of FCT is above that of vanilla after %s.' % ', '.join(
+        '%d of %d epochs for %s' % (SF[h]['fct_above'], SF[h]['epochs'], h) for h in ['Polyp-PVT', 'PraNet-V2', 'ASGNet'] if h in SF),
     '\\end{tablenotes}', '\\end{threeparttable}', '\\end{table}'])
 
 # ------------------------------------------------------------------ appendix: per-seed mDice
