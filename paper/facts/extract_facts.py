@@ -71,7 +71,8 @@ def runs_from_fp(arm):
     return out
 def runs_from_summary(arm):
     best = {}
-    for path in sorted(glob.glob(os.path.join(R, 'seeds*.out')), key=os.path.getmtime):
+    for path in sorted(glob.glob(os.path.join(R, 'seeds*.out')) + glob.glob(os.path.join(R, 'results', '*.md')),
+                       key=os.path.getmtime):
         text = open(path, errors='replace').read()
         i = text.rfind('difference = %s - PVT_VANILLA with the same seed' % arm)
         if i < 0:
