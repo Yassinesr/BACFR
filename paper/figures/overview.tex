@@ -50,7 +50,7 @@
   \draw[flow, black!45] (y.west) -- (so.east);
   \draw[flow, black!45] (y.south west) -- (sv.east);
   \node[lab, above=1.4mm of sh, xshift=4mm] {(1) three supervised views};
-  % ---- (2) the label-aware pulls between the views' probabilities -----------------
+  % ---- (2) the consistency term between the views' probabilities -----------------
   \node[map] (po) at (8.75, 0)     {$p^{o}$};
   \node[map] (ph) at (10.95, 1.15) {$p^{h}$};
   \node[map] (pv) at (10.95, -1.15) {$p^{v}$};
@@ -59,10 +59,10 @@
   \draw[pull, flipc] (po.south) to[bend right=28] node[lab, below left, pos=0.45, xshift=1mm] {$C_v$, weight $w_v$} (pv.west);
   \draw[pull, upc]   (pv.north) to[bend right=28] (po.east);
   \node[lab] at (9.95, 0.47) {$U$, gate $g$};
-  \node[lab] at (9.85, 2.25) {(2) label-aware pulls, $p=\sigma(z)$};
-  \node[lab, anchor=west] at (11.55, 0.35) {\textcolor{flipc}{\rule[0.5ex]{3mm}{1.2pt}} flip pulls:};
+  \node[lab] at (9.85, 2.25) {(2) label-aware consistency, $p=\sigma(z)$};
+  \node[lab, anchor=west] at (11.55, 0.35) {\textcolor{flipc}{\rule[0.5ex]{3mm}{1.2pt}} flipped views:};
   \node[lab, anchor=west] at (11.55, 0.0) {lag or margin};
-  \node[lab, anchor=west] at (11.55, -0.45) {\textcolor{upc}{\rule[0.5ex]{3mm}{1.2pt}} upright pull:};
+  \node[lab, anchor=west] at (11.55, -0.45) {\textcolor{upc}{\rule[0.5ex]{3mm}{1.2pt}} upright view:};
   \node[lab, anchor=west] at (11.55, -0.8) {best flip, gated};
-  \node[lab] at (9.85, -2.2) {arrow: teacher (detached) $\to$ student};
+  \node[lab] at (9.85, -2.2) {arrow: detached target $\to$ view it moves};
 \end{tikzpicture}

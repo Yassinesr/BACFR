@@ -63,32 +63,33 @@ constrained architecture or a multiplied inference cost. All these methods treat
 equally reliable or weigh them by the model's own confidence, since none uses the label to
 compare views; under full supervision, FCT does exactly that.
 
-\subsection{Self-Distillation and Label-Aware Weighting}
+\subsection{Loss Reweighting and Distillation}
 
-Knowledge distillation trains a student to match the soft predictions of a
-teacher~\cite{hinton2015distilling}. In self-distillation, the teacher is the model itself: an
-earlier generation of the same architecture~\cite{furlanello2018born}, its own deeper
-layers~\cite{zhang2019byot}, its predictions from the previous epoch~\cite{kim2021pskd} or
-dropout-sampled versions of itself~\cite{lee2023sddropout}.
-Closest to our setting, data-distortion guided self-distillation~\cite{xu2019ddgsd} makes a
-network agree with itself on two distorted copies of an image under full supervision, treating
-both copies alike. The consistency term of FCT is also self-distillation across views, but it
-compares teacher and student against the label, pixel by pixel.
+Training losses for segmentation often change how much each pixel counts. Focal
+loss~\cite{lin2017focal} and online hard example mining~\cite{shrivastava2016ohem} emphasize examples
+with a high loss, and the structure loss used by PraNet-style networks emphasizes pixels near
+boundaries~\cite{wei2020f3net}. By our identity, the consistency term of FCT belongs to this family: it
+reweights the supervised loss of each pixel, by how the pixel's error in one view compares with its
+error in another view of the same image.
 
-Several works relate distillation to the ground truth. Analyses of the distillation gradient
-show that it rescales the supervised gradient according to the teacher's confidence in the true
-class~\cite{furlanello2018born,tang2020understanding}, self-distillation over several rounds
-averages the labels of instances with correlated features~\cite{jeong2025selfdistill}, and Yuan et
+A consistency term toward a detached prediction also resembles knowledge distillation, which trains a
+student to match the soft predictions of a teacher~\cite{hinton2015distilling}. In self-distillation,
+the teacher is the model itself: an earlier generation of the same
+architecture~\cite{furlanello2018born}, its own deeper layers~\cite{zhang2019byot}, its predictions
+from the previous epoch~\cite{kim2021pskd} or dropout-sampled versions of
+itself~\cite{lee2023sddropout}. Closest to our setting, data-distortion guided
+self-distillation~\cite{xu2019ddgsd} makes a network agree with itself on two distorted copies of an
+image under full supervision, treating both copies alike. Analyses of the distillation gradient show
+that it rescales the supervised gradient according to the teacher's confidence in the true
+class~\cite{furlanello2018born,tang2020understanding}, self-distillation over several rounds averages
+the labels of instances with correlated features~\cite{jeong2025selfdistill}, and Yuan et
 al.~\cite{yuan2020revisiting} relate distillation to label smoothing. Decoupled knowledge
-distillation~\cite{zhao2022dkd} splits the loss exactly into target-class and non-target-class
-terms, knowledge adjustment~\cite{wen2021preparing}, refined logits~\cite{sun2025rld} and label
-revision~\cite{lan2025labelrevision} correct teacher predictions that contradict the label, and confidence-aware multi-teacher distillation~\cite{zhang2022camkd} weights each
-teacher by how close its predictions are to the label. For segmentation, structured distillation
-transfers pixel-wise and pairwise knowledge from a large network to a compact
-one~\cite{liu2019skd}. Loss reweighting also changes how much
-each example counts: focal loss~\cite{lin2017focal} and online hard example
-mining~\cite{shrivastava2016ohem} emphasize examples with high loss, and the structure loss used
-by PraNet-style networks emphasizes pixels near boundaries~\cite{wei2020f3net}. By our identity,
-FCT belongs to this family: it reweights the supervised gradient of each pixel, but by how the
-pixel's error compares with that of another view of the same pixel, within one network rather
-than across separate teachers.
+distillation~\cite{zhao2022dkd} splits the loss exactly into target-class and non-target-class terms;
+knowledge adjustment~\cite{wen2021preparing}, refined logits~\cite{sun2025rld} and label
+revision~\cite{lan2025labelrevision} correct teacher predictions that contradict the label; and
+confidence-aware multi-teacher distillation~\cite{zhang2022camkd} weights each teacher by how close its
+predictions are to the label. For segmentation, structured distillation transfers pixel-wise and
+pairwise knowledge from a large network to a compact one~\cite{liu2019skd}. FCT is not a
+teacher--student scheme: it is one loss on the views of one image, within one network, and it neither
+corrects a target nor ranks separate teachers, but weights each pixel's consistency term by comparing
+the errors of two views with the label.

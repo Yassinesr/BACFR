@@ -1,13 +1,14 @@
 \section{Conclusion}
 \label{sec:conclusion}
 
-We asked which view should teach when a segmentation network is trained to agree with itself under
-flips. For binary labels, an identity answers it: a consistency pull toward a detached teacher view is
-the supervised pull, rescaled by one minus the ratio of the two views' errors. The pull therefore moves
-the student toward the label only where the teacher is closer to it. We turned this lag condition into
-FCT, which supervises an image and its two flips and lets a view teach another only where the label
-allows it, with a constant fixed by the decision threshold. FCT improved the unseen ETIS set for all
-three networks we tested, and the five-set mean Dice of Polyp-PVT and PraNet-V2 on every seed. It also made the
-predictions more flip-consistent and left inference unchanged. Future work will extend the identity to
-multi-class segmentation and to other transformations, such as rotations, and test FCT itself on the
-six PolypGen centres, where a label-aware variant already improves on every seed.
+We proposed flip-consistent training, a plug-in loss for polyp segmentation that supervises each image
+in three orientation views and draws their predictions together with a consistency term. For binary
+labels, we showed that such a term acts as the supervised loss with an adaptive pixel weight, which is
+negative where a view is drawn toward a less accurate one, and we gave FCT label-aware weights that
+remove this case, with a constant fixed by the decision threshold. FCT improved the unseen ETIS set for
+all three networks we tested, and the five-set mean Dice of Polyp-PVT and PraNet-V2 on every seed,
+while making their predictions more flip-consistent and leaving inference unchanged. A study of the loss
+terms attributed most of the ETIS gain to the multi-view supervision; the full loss, with its
+consistency term and weights, was the only variant that improved all five test sets. Future work will extend the
+loss to multi-class segmentation and to other transformations, such as rotations, and test FCT itself on
+the six PolypGen centres, where a label-aware variant already improves on every seed.

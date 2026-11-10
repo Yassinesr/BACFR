@@ -117,34 +117,36 @@ def drow(label, views, pulls, up, key, arm, step=None, gaparm=None, planned=6):
     return ' & '.join(cells) + ' \\\\'
 
 
-rows = ['\\multicolumn{10}{@{}l}{\\textit{Building FCT on the three supervised views}} \\\\',
+rows = ['\\multicolumn{10}{@{}l}{\\textit{Building the FCT loss on the multi-view supervision}} \\\\',
         drow('(a) Vanilla', NO, NO, NO, None, None),
-        drow('(b) Three views', YES, NO, NO, 'pvt_s3', 'S3', step=None, gaparm='S3 (all seeds)'),
-        drow('(c) + upright pull', YES, NO, YES, 'pvt_s3up', 'S3UP', step='S3UP - S3', gaparm='S3UP (all seeds)'),
-        drow('(d) + flip pulls', YES, 'Eq.~\\eqref{eq:weight}', NO, 'pvt_s3lm', 'S3LM', step='S3LM - S3', gaparm='S3LM'),
+        drow('(b) Multi-view supervision', YES, NO, NO, 'pvt_s3', 'S3', step=None, gaparm='S3 (all seeds)'),
+        drow('(c) + upright-view term', YES, NO, YES, 'pvt_s3up', 'S3UP', step='S3UP - S3', gaparm='S3UP (all seeds)'),
+        drow('(d) + flipped-view term', YES, 'Eq.~\\eqref{eq:weight}', NO, 'pvt_s3lm', 'S3LM', step='S3LM - S3', gaparm='S3LM'),
         drow('(e) + both (FCT)', YES, 'Eq.~\\eqref{eq:weight}', YES, 'pvt_s3lmup', 'S3LMUP', step='S3LMUP - S3', gaparm='S3LMUP'),
         '\\addlinespace[2pt]',
-        '\\multicolumn{10}{@{}l}{\\textit{Changing the weight function of FCT}} \\\\',
-        drow('(f) FCT, $w=1$', YES, '$w=1$', YES, 'pvt_s3fup', 'S3FUP', step='S3LMUP - S3FUP', gaparm='S3FUP (all seeds)', planned=3),
+        '\\multicolumn{10}{@{}l}{\\textit{Changing the weights of FCT}} \\\\',
+        drow('(f) FCT, unweighted', YES, '$w=1$', YES, 'pvt_s3fup', 'S3FUP', step='S3LMUP - S3FUP', gaparm='S3FUP (all seeds)', planned=3),
         drow('(g) FCT, lag only', YES, 'lag only', YES, 'pvt_s3relup', 'S3RELUP', step='S3LMUP - S3RELUP', gaparm='S3RELUP (all seeds)', planned=3),
         '\\addlinespace[2pt]',
-        '\\multicolumn{10}{@{}l}{\\textit{Another label-aware weight, without the upright pull}} \\\\',
+        '\\multicolumn{10}{@{}l}{\\textit{Another label-aware weight, without the upright-view term}} \\\\',
         drow('(h) Graded weight', YES, 'graded', NO, 'pvt_s3sig', 'S3SIG', step='S3LM - S3SIG', gaparm='S3SIG')]
 write('tab_rules.tex', [
     '\\begin{table*}[t]', '\\centering', '\\footnotesize', '\\setlength{\\tabcolsep}{2.6pt}', '\\begin{threeparttable}',
-    '\\caption{Component dissection of FCT on Polyp-PVT: paired mDice gains (points, 95\\% CI), the effect of each '
-    'component, test sets improved, flip gap and gradient alignment. Bold: CIs that exclude zero.}',
+    '\\caption{Ablation of the FCT loss terms on Polyp-PVT: paired mDice gains (points, 95\\% CI), the effect of '
+    'each term, test sets improved, flip gap and gradient alignment. Bold: CIs that exclude zero.}',
     '\\label{tab:rules}',
     '\\begin{tabular}{@{}l c c c c c c c c c@{}}', '\\toprule',
-    'Variant & Views & Flip pulls & Upright pull & Mean gain & ETIS gain & Component effect & Sets & Flip gap (\\%) & Cosine \\\\',
+    '& & \\multicolumn{2}{c}{Consistency term} & & & & & & \\\\', '\\cmidrule(lr){3-4}',
+    'Variant & Views & Flipped & Upright & Mean gain & ETIS gain & Effect & Sets & Flip gap (\\%) & Cosine \\\\',
     '\\midrule'] + rows + [
     '\\bottomrule', '\\end{tabular}', '\\begin{tablenotes}[flushleft]', '\\footnotesize',
-    '\\item Six seeds unless the row says otherwise. Mean and ETIS gain: over vanilla with the same seeds. Component '
-    'effect, on the five-set mean, paired by seed: for rows (c)--(e), the row minus row (b), so the effect of the '
-    'pulls added to the three views; for rows (f) and (g), FCT minus the row, the effect of FCT\\textquotesingle s '
-    'weight function; for row (h), row (d) minus row (h). Sets: test sets, of five, with a positive mean gain. Cosine: '
-    'between the gradient of the flip pulls and that of the rest of the objective, measured every 50 batches and '
-    'averaged over training and seeds; for row (e), the rest includes the upright pull. Lag only: $w=1$ where the '
+    '\\item Six seeds unless the row says otherwise. Mean and ETIS gain: over vanilla with the same seeds. Effect, '
+    'on the five-set mean, paired by seed: for rows (c)--(e), the row minus row (b), the effect of the consistency term '
+    'added to the multi-view supervision; for rows (f) and (g), FCT minus the row, the effect of FCT\\textquotesingle s '
+    'weights; for row (h), row (d) minus row (h). Sets: test sets, of five, with a positive mean gain. Cosine: '
+    'between the gradient of the consistency term on the flipped views and that of the rest of the loss, measured every '
+    '50 batches and averaged over training and seeds; for rows (e)--(g), the rest includes the upright-view term. '
+    'Lag only: $w=1$ where the '
     'flipped view lags and $0$ where it leads ($a\\to\\infty$). Graded: the confidence-graded weight of '
     'Section~\\ref{sec:ablation}.',
     '\\end{tablenotes}', '\\end{threeparttable}', '\\end{table*}'])
@@ -246,7 +248,7 @@ def train_min_per_epoch(arm, seed):
     return st.median(rates)
 cost = {}
 for host, v, f in [('Polyp-PVT', 'PVT_VANILLA', 'S3LMUP'), ('PraNet-V2', 'PRANETV2_VANILLA', 'PRANETV2_S3LMUP'),
-                   ('ASGNet', 'ASGNET_VANILLA', 'ASGNET_S3LMUP'), ('Polyp-PVT, no upright pull', 'PVT_VANILLA', 'S3LM')]:
+                   ('ASGNet', 'ASGNET_VANILLA', 'ASGNET_S3LMUP'), ('Polyp-PVT, no upright-view term', 'PVT_VANILLA', 'S3LM')]:
     if not all(os.path.isfile(os.path.join(REPO, 'logs_%s_s%d.txt' % (a, sd))) for a in (v, f) for sd in range(1, 7)):
         continue
     a = st.median(train_min_per_epoch(v, s) for s in range(1, 7))
@@ -262,7 +264,7 @@ write('tab_cost.tex', [
     '\\begin{tabular}{@{}l c c c c@{}}', '\\toprule',
     'Network & Vanilla & FCT & Ratio & Inference \\\\', '\\midrule'] + rows + [
     '\\bottomrule', '\\end{tabular}', '\\begin{tablenotes}[flushleft]', '\\footnotesize',
-    '\\item Training time excludes the per-epoch evaluation. One \\pend{[GPU model]} GPU per run. No upright pull: '
+    '\\item Training time excludes the per-epoch evaluation. One \\pend{[GPU model]} GPU per run. No upright-view term: '
     'row (d) of Table~\\ref{tab:rules}. Inference: the same network, applied once to the upright image.',
     '\\end{tablenotes}', '\\end{threeparttable}', '\\end{table}'])
 

@@ -56,6 +56,27 @@
 - CVC-300  vanilla 0.8940±0.0041  arm 0.8896±0.0097  diff -0.0044 [-0.0150, +0.0062]  p_t 0.336  p_perm 0.318  3/6
 - ETIS     vanilla 0.7744±0.0123  arm 0.7912±0.0085  diff +0.0169 [+0.0008, +0.0330]  p_t 0.043  p_perm 0.015  5/6
 - mean     vanilla 0.8584±0.0042  arm 0.8615±0.0033  diff +0.0031 [+0.0000, +0.0061]  p_t 0.049  p_perm 0.203  5/6
+## pvt_s3
+- Kvasir   vanilla 0.9194±0.0059  arm 0.9228±0.0047  diff +0.0035 [-0.0051, +0.0121]  p_t 0.344  p_perm 0.290  4/6
+- ClinicDB vanilla 0.9317±0.0064  arm 0.9269±0.0062  diff -0.0048 [-0.0163, +0.0068]  p_t 0.338  p_perm 0.221  2/6
+- ColonDB  vanilla 0.8028±0.0068  arm 0.8079±0.0035  diff +0.0052 [-0.0012, +0.0115]  p_t 0.090  p_perm 0.130  4/6
+- CVC-300  vanilla 0.8879±0.0086  arm 0.8874±0.0062  diff -0.0005 [-0.0095, +0.0085]  p_t 0.900  p_perm 0.913  2/6
+- ETIS     vanilla 0.7861±0.0029  arm 0.8010±0.0127  diff +0.0148 [+0.0032, +0.0265]  p_t 0.022  p_perm 0.019  5/6
+- mean     vanilla 0.8656±0.0017  arm 0.8692±0.0029  diff +0.0037 [-0.0001, +0.0074]  p_t 0.052  p_perm 0.026  5/6
+## pvt_s3fup
+- Kvasir   vanilla 0.9181±0.0072  arm 0.9237±0.0023  diff +0.0056 [-0.0084, +0.0196]  p_t 0.227  p_perm 0.200  2/6
+- ClinicDB vanilla 0.9313±0.0092  arm 0.9222±0.0074  diff -0.0091 [-0.0358, +0.0175]  p_t 0.278  p_perm 0.200  0/6
+- ColonDB  vanilla 0.8041±0.0088  arm 0.8031±0.0098  diff -0.0010 [-0.0444, +0.0425]  p_t 0.933  p_perm 0.800  1/6
+- CVC-300  vanilla 0.8827±0.0086  arm 0.8883±0.0084  diff +0.0057 [-0.0327, +0.0441]  p_t 0.590  p_perm 0.500  1/6
+- ETIS     vanilla 0.7854±0.0021  arm 0.8001±0.0128  diff +0.0147 [-0.0140, +0.0434]  p_t 0.158  p_perm 0.100  3/6
+- mean     vanilla 0.8643±0.0016  arm 0.8675±0.0017  diff +0.0032 [-0.0050, +0.0114]  p_t 0.237  p_perm 0.200  2/6
+## pvt_s3relup
+- Kvasir   vanilla 0.9181±0.0072  arm 0.9190±0.0038  diff +0.0009 [-0.0081, +0.0099]  p_t 0.706  p_perm 0.800  2/6
+- ClinicDB vanilla 0.9313±0.0092  arm 0.9269±0.0145  diff -0.0044 [-0.0296, +0.0208]  p_t 0.531  p_perm 0.700  1/6
+- ColonDB  vanilla 0.8041±0.0088  arm 0.8083±0.0065  diff +0.0043 [-0.0146, +0.0232]  p_t 0.433  p_perm 0.600  2/6
+- CVC-300  vanilla 0.8827±0.0086  arm 0.8884±0.0068  diff +0.0058 [+0.0002, +0.0114]  p_t 0.047  p_perm 0.500  3/6
+- ETIS     vanilla 0.7854±0.0021  arm 0.7948±0.0025  diff +0.0094 [-0.0007, +0.0194]  p_t 0.057  p_perm 0.100  3/6
+- mean     vanilla 0.8643±0.0016  arm 0.8675±0.0030  diff +0.0032 [-0.0045, +0.0109]  p_t 0.216  p_perm 0.200  3/6
 
 ## head to head (points of Dice x100 not applied; fractions)
 - S3LMUP - S3LM: mean +0.0005 [-0.0036, +0.0047] 3/6 | ETIS -0.0032 [-0.0167, +0.0103] 2/6
@@ -80,10 +101,10 @@
 - S3                 n=1  train 0.7  CVC-300 6.0  CVC-ClinicDB 5.4  Kvasir 4.8  CVC-ColonDB 11.2  ETIS-LaribPolypDB 13.5  test_mean 8.2
 - every seed lower: {"S3LMUP": {"train": true, "CVC-300": true, "CVC-ClinicDB": true, "Kvasir": true, "CVC-ColonDB": true, "ETIS-LaribPolypDB": true, "test_mean": true}, "PRANETV2_S3LMUP": {"train": true, "CVC-300": true, "CVC-ClinicDB": true, "Kvasir": true, "CVC-ColonDB": true, "ETIS-LaribPolypDB": true, "test_mean": true}}
 
-## time (min/epoch, median over seeds): {"PVT_VANILLA": 1.39, "S3LMUP": 2.85, "S3LM": 2.51, "S3SIG": 2.48, "PRANETV2_VANILLA": 1.72, "PRANETV2_S3LMUP": 3.89, "ASGNET_VANILLA": 3.02, "ASGNET_S3LMUP": 5.78}
-## gradient cosine (mean over logged steps and seeds): {"S3LMUP": 0.528, "S3LM": 0.532, "S3SIG": 0.262, "PRANETV2_S3LMUP": 0.404, "ASGNET_S3LMUP": 0.202, "S3F (1 run)": 0.223}
-## |g_cons|/|g_sup|: {"S3LMUP": 0.08, "S3LM": 0.082, "S3SIG": 0.117, "PRANETV2_S3LMUP": 0.051, "ASGNET_S3LMUP": 0.017, "S3F (1 run)": 0.125}
-## final counters (EMA, mean over seeds): {"S3LMUP": {"up": 0.6133, "lead": NaN, "wl": NaN}, "PRANETV2_S3LMUP": {"up": 0.6061, "lead": 0.4396, "wl": 0.0024}, "ASGNET_S3LMUP": {"up": 0.6313, "lead": 0.4534, "wl": 0.0024}}
+## time (min/epoch, median over seeds): {"PVT_VANILLA": 1.39, "S3LMUP": 2.85, "S3LM": 2.51, "S3SIG": 2.48, "PRANETV2_VANILLA": 1.72, "PRANETV2_S3LMUP": 3.89, "ASGNET_VANILLA": 3.02, "ASGNET_S3LMUP": 5.78, "S3FUP": 2.81, "S3RELUP": 2.8}
+## gradient cosine (mean over logged steps and seeds): {"S3LMUP": 0.528, "S3LM": 0.532, "S3SIG": 0.262, "PRANETV2_S3LMUP": 0.404, "ASGNET_S3LMUP": 0.202, "S3FUP": 0.23, "S3RELUP": 0.557, "S3F (1 run)": 0.223}
+## |g_cons|/|g_sup|: {"S3LMUP": 0.08, "S3LM": 0.082, "S3SIG": 0.117, "PRANETV2_S3LMUP": 0.051, "ASGNET_S3LMUP": 0.017, "S3FUP": 0.109, "S3RELUP": 0.074, "S3F (1 run)": 0.125}
+## final counters (EMA, mean over seeds): {"S3LMUP": {"up": 0.6133, "lead": NaN, "wl": NaN}, "PRANETV2_S3LMUP": {"up": 0.6061, "lead": 0.4396, "wl": 0.0024}, "ASGNET_S3LMUP": {"up": 0.6313, "lead": 0.4534, "wl": 0.0024}, "S3FUP": {"up": 0.6287, "lead": NaN, "wl": NaN}, "S3RELUP": {"up": 0.6261, "lead": NaN, "wl": NaN}}
 
 ## selection-free (training-time evaluator, Dice points)
 - Polyp-PVT, last epoch: Kvasir +0.62 [-0.05, +1.29] 5/6  ClinicDB +0.57 [-0.82, +1.96] 4/6  ColonDB -0.36 [-1.60, +0.88] 2/6  CVC-300 -0.66 [-2.14, +0.83] 1/6  ETIS +2.60 [+0.84, +4.36] 6/6  mean +0.55 [-0.11, +1.22] 4/6

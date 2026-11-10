@@ -85,6 +85,32 @@ def runs_from_summary(arm):
         if len(runs) >= len(best):
             best = runs
     return best
+def find_block(fct, van):
+    """The last seed_summary block 'difference = fct - van' in seeds*.out or results/*.md, as the official
+    statistics computed from full-precision scores: (seeds, {set: stats})."""
+    best = None
+    files = sorted(glob.glob(os.path.join(R, 'seeds*.out')) + glob.glob(os.path.join(R, 'results', '*.md')),
+                   key=os.path.getmtime)
+    for path in files:
+        text = open(path, errors='replace').read()
+        i = text.rfind('difference = %s - %s with the same seed' % (fct, van))
+        if i < 0:
+            continue
+        m = re.search(r'seeds \[([\d, ]+)\]', text[max(0, i - 80):i])
+        stats = {}
+        for line in text[i:].splitlines()[2:9]:
+            mm = re.match(r'^(\S+)\s+([\d.]+)\+-([\d.]+)\s+([\d.]+)\+-([\d.]+)\s+([+-][\d.]+)\s+\[\s*([+-][\d.]+),'
+                          r'\s*([+-][\d.]+)\]\s+([\d.]+)\s+([\d.]+)\s+(\d)/(\d)', line.strip())
+            if mm:
+                g = mm.groups()
+                stats[g[0]] = dict(van=float(g[1]), van_sd=float(g[2]), fct=float(g[3]), fct_sd=float(g[4]),
+                                   diff=float(g[5]), lo=float(g[6]), hi=float(g[7]), p_t=float(g[8]),
+                                   p_perm=float(g[9]), wins=int(g[10]), n=int(g[11]))
+        if m and set(stats) == set(SETS):
+            best = ([int(x) for x in m.group(1).split(',')], stats)
+    return best
+
+
 for key, arm in DISSECT.items():
     r = runs_from_fp(arm) or runs_from_summary(arm)
     if len(r) < 3:
@@ -95,6 +121,9 @@ for key, arm in DISSECT.items():
     for j, name in enumerate(SETS):
         a, b = [van_r[sd][j] for sd in seeds], [r[sd][j] for sd in seeds]
         stats[name] = dict(paired(a, b), van=st.mean(a), van_sd=st.stdev(a), fct=st.mean(b), fct_sd=st.stdev(b))
+    blk = None if runs_from_fp(arm) else find_block(arm, 'PVT_VANILLA')
+    if blk and blk[0] == seeds:
+        stats = blk[1]
     S[key] = dict(stats=stats, runs={'PVT_VANILLA': {sd: van_r[sd] for sd in seeds}, arm: r}, seeds=seeds)
 F['dissection_pending'] = [DISSECT[k] for k in DISSECT if k not in S]
 
@@ -169,6 +198,20 @@ for name, ka, kb in STEPS:
         ra, rb = S[ka]['runs'][ARMOF[ka]], S[kb]['runs'][ARMOF[kb]]
         sds = sorted(set(ra) & set(rb))
         D[name] = {SETS[j]: dict(paired([ra[sd][j] for sd in sds], [rb[sd][j] for sd in sds]), n=len(sds)) for j in range(6)}
+for name, ka, kb in STEPS:
+    if name not in D:
+        continue
+    A, B = ARMOF[ka], ARMOF[kb]
+    blk, sign = find_block(B, A), 1
+    if blk is None:
+        blk, sign = find_block(A, B), -1
+    if blk is None or blk[0] != sorted(set(S[ka]['runs'][A]) & set(S[kb]['runs'][B])):
+        continue
+    for st_name, d in blk[1].items():
+        if sign > 0:
+            D[name][st_name] = dict(diff=d['diff'], lo=d['lo'], hi=d['hi'], wins=d['wins'], n=d['n'])
+        else:
+            D[name][st_name] = dict(diff=-d['diff'], lo=-d['hi'], hi=-d['lo'], wins=d['n'] - d['wins'], n=d['n'])
 F['dissection_seeds'] = {k: len(S[k].get('seeds', range(1, 7))) for k in DISSECT if k in S}
 F['dissection_steps'] = D
 F['head_to_head'] = H

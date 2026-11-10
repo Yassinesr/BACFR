@@ -23,31 +23,31 @@
 
 \begin{document}
 
-\title{Which View Should Teach? Label-Aware Flip Consistency for Generalizable Polyp Segmentation}
+\title{Flip-Consistent Training: A Plug-In Loss for Generalizable Polyp Segmentation}
 \author{\pend{Authors}}
 \maketitle
 
 \begin{abstract}
-Polyp segmentation networks lose accuracy on centres unseen in training. A mirrored
-polyp is still a polyp, so a reliable model should predict the mirrored mask for a
-mirrored image; we observe that trained models do not, and are least flip-consistent on
-the hardest test sets. Flip consistency regularization is a natural remedy, but it comes
-from semi-supervised learning, where no label says which view is correct. We show that,
-in binary segmentation with labels available, a cross-entropy consistency pull toward a
-teacher view is a reweighted supervised pull: it moves the student view toward the label
-only where the teacher is closer to it. Building on this identity, we propose label-aware
-flip-consistency training (FCT), in which each view is pulled at full strength only
-toward a more accurate view, and never toward a misclassification it has avoided. The
-rule's one constant is set by the decision threshold rather than tuned, and FCT leaves
-the network and its inference unchanged. Experiments with three representative architectures on five public benchmarks, each repeated over six
-random seeds, show that FCT improves Dice on the unseen ETIS dataset for all three networks, and the
-five-set mean on every seed for Polyp-PVT and PraNet-V2, whose flip inconsistency it also markedly
-reduces. Notably, FCT improves PraNet-V2 on ETIS by 3.6 Dice points.
+Polyp segmentation networks lose accuracy on centres unseen in training, and their predictions change
+when an image is mirrored, although a mirrored polyp is still a polyp. We propose flip-consistent
+training (FCT), a plug-in training loss that leaves the network and its inference unchanged. FCT
+supervises each image in three orientation views, upright and flipped horizontally and vertically,
+and adds a consistency term that draws the predictions of the views together. We show that, for
+binary labels, such a term acts on each pixel as the supervised loss with an adaptive weight, which
+is negative where a view is drawn toward a less accurate one. FCT therefore weights its consistency
+term with the label, so that no view is drawn toward a misclassification it has avoided, with a
+single constant set by the decision threshold. Experiments with three architectures on five public
+benchmarks, each repeated over six random seeds, show that FCT improves Dice on the unseen ETIS
+dataset for all three networks, and the five-set mean on every seed for Polyp-PVT and PraNet-V2,
+whose flip inconsistency it also markedly reduces. A study of the loss terms attributes most of the
+ETIS gain to the multi-view supervision; the full loss, with its consistency term and weights, is the
+only variant that improves all five test sets. Notably, FCT improves PraNet-V2 on ETIS by 3.6 Dice
+points.
 \end{abstract}
 
 \begin{IEEEkeywords}
-Polyp segmentation, domain generalization, consistency regularization, flip equivariance,
-self-distillation.
+Polyp segmentation, domain generalization, training loss, consistency regularization, flip
+equivariance.
 \end{IEEEkeywords}
 
 % ---- sections/introduction.tex ----
@@ -87,69 +87,71 @@ is on ETIS. Means over six seeds.}
 \label{fig:teaser}
 \end{figure*}
 
-Two remedies are common. Flip augmentation trains on mirrored copies with mirrored labels, but
-each copy is constrained only by its own label, never by the prediction on its mirror.
-Consistency regularization adds that constraint by penalizing disagreement between the
-predictions on the views. It comes from semi-supervised learning, where agreement between views
-is the only signal that unlabeled images
-provide~\cite{laine2017temporal,tarvainen2017mean,sohn2020fixmatch}, and medical variants
-enforce it under spatial transformations~\cite{bortsova2019consistency,li2021tcsm}. Since no
-label says which view is right, the views are treated as equally reliable or weighed by the
-model's own confidence. Supervised uses of consistency, such as AugMix~\cite{hendrycks2020augmix}
-and R-Drop~\cite{liang2021rdrop}, keep this symmetry even though the label is known, so a
-correct view can be pulled toward a wrong one.
+Two remedies are common, and both act on the training loss. Flip augmentation trains on mirrored
+copies with mirrored labels, but each copy is constrained only by its own label, never by the
+prediction on its mirror. Consistency regularization adds that constraint with a loss term that
+penalizes disagreement between the predictions on the views. It comes from semi-supervised
+learning, where agreement between views is the only signal that unlabeled images
+provide~\cite{laine2017temporal,tarvainen2017mean,sohn2020fixmatch}, and medical variants enforce it
+under spatial transformations~\cite{bortsova2019consistency,li2021tcsm}. Since no label says which
+view is right, the views are treated as equally reliable or weighed by the model's own confidence.
+Supervised uses of consistency, such as AugMix~\cite{hendrycks2020augmix} and
+R-Drop~\cite{liang2021rdrop}, keep this symmetry even though the label is known, so a correct view
+can be drawn toward a wrong one.
 
-We show that, under full supervision, the label settles which view should teach. For binary
-segmentation with a cross-entropy consistency loss toward a detached teacher view, the gradient
-on the student equals the supervised gradient scaled by one minus the ratio of the teacher's
-error to the student's. Similar decompositions of the distillation gradient are known for
-classification~\cite{furlanello2018born,tang2020understanding}; here we apply the identity pixel
-by pixel, across views of one image. A consistency pull is therefore a reweighted supervised
-pull: it moves the student toward the label where the teacher is closer to it, and away from the
-label where the student is closer. Unweighted consistency mixes both kinds of pulls in every
-image, and only the label can tell them apart.
+We show that, under full supervision, a consistency term is a reweighted supervised loss. For binary
+segmentation, the gradient of a cross-entropy consistency term that draws one view toward the detached
+prediction of another equals the supervised gradient, scaled by one minus the ratio of the two views'
+errors. Similar decompositions of the distillation gradient are known for
+classification~\cite{furlanello2018born,tang2020understanding}; here we apply the identity pixel by
+pixel, across views of one image. A consistency term is therefore an adaptive pixel weight on the
+supervised loss: positive where a view is farther from the label than its target, and negative where
+it is closer. Unweighted consistency mixes both kinds of pixels in every image, and only the label
+can tell them apart.
 
-Building on this identity, we propose label-aware flip-consistency training (FCT). Each image is
-presented upright, flipped horizontally and flipped vertically, and all three views are
-supervised. Each flipped view is pulled toward the upright view at full strength wherever it lags
-behind it. Where it leads, the pull is kept only if the upright view is correct, scaled by how
-far the upright prediction lies on the correct side of the 0.5 threshold; this weak pull keeps
-the views consistent without moving either across the threshold, much as label smoothing tempers
-overconfident targets~\cite{yuan2020revisiting}. The upright view, in turn, learns from the
-flipped view closest to the label wherever that view is more accurate. The rule's single
-constant is set by the decision threshold rather than tuned, and FCT changes only the training
-objective: it multiplies the training time by about 3.5 and adds nothing at inference. To the
-best of our knowledge, FCT is the first rule that uses the label to decide, pixel by pixel and
-across views of one network, which view teaches.
+Building on this identity, we propose flip-consistent training (FCT), a plug-in training loss for
+polyp segmentation. FCT supervises each image in three orientation views, upright, flipped
+horizontally and flipped vertically, and adds a consistency term that draws the predictions of the
+views together: each flipped view toward the upright view, and the upright view toward the flipped view
+closest to the label. Label-aware weights complete the loss. A flipped view moves toward the upright
+view at full strength where it is farther from the label; where it is closer, it moves only if the
+upright view is correct, in proportion to how far the upright prediction lies on the correct side of
+the 0.5 threshold. This weak term keeps the views consistent without moving either across the
+threshold, much as label smoothing tempers overconfident targets~\cite{yuan2020revisiting}, and its
+single constant is set by the decision threshold rather than tuned. FCT changes only the training
+loss: it multiplies the training time by about 3.5 and adds nothing at inference. To the best of our
+knowledge, FCT is the first consistency loss that uses the label to set, pixel by pixel, the
+direction in which the views of an image are drawn together.
 
 We add FCT, without retuning, to three segmentation networks of different design:
 Polyp-PVT~\cite{dong2023polyppvt}, built on a pyramid vision transformer;
 PraNet-V2~\cite{hu2026pranetv2}, a convolutional network with dual-supervised reverse attention;
 and ASGNet~\cite{sun2026asgnet}, which guides its features with spectral cues and already trains
-with random flips. Each
-network is trained with and without FCT under six paired random seeds and tested on five public
-test sets, three of which are unseen in training. FCT improves ETIS for all three networks, by
-+1.65, +3.61 and +1.69 points, and \mbox{CVC-ColonDB} for PraNet-V2, by +3.01 points, all with paired
-95\% confidence intervals above zero. It raises the five-set mean Dice on every seed for Polyp-PVT
-and PraNet-V2, and on five of six for ASGNet, whose gain is borderline. FCT also lowers the five-set
-mean flip gap of Polyp-PVT and PraNet-V2 by 40\% and 34\%, respectively. On six more centres from the PolypGen benchmark~\cite{ali2023polypgen}, a
-label-aware variant improves the pooled Dice on every seed \pend{(FCT itself is pending)}. A
-component-by-component dissection relates these gains to the three
-supervised views, the pulls, their weight and the upright pull \pend{(four of its rows are still
-running)}.
+with random flips. Each network is trained with and without FCT under six paired random seeds and
+tested on five public test sets, three of which are unseen in training. FCT improves ETIS for all
+three networks, by +1.65, +3.61 and +1.69 points, and \mbox{CVC-ColonDB} for PraNet-V2, by +3.01
+points, all with paired 95\% confidence intervals above zero. It raises the five-set mean Dice on
+every seed for Polyp-PVT and PraNet-V2, and on five of six for ASGNet, whose gain is borderline. FCT
+also lowers the five-set mean flip gap of Polyp-PVT and PraNet-V2 by 40\% and 34\%, respectively. On
+six more centres from the PolypGen benchmark~\cite{ali2023polypgen}, a label-aware variant improves
+the pooled Dice on every seed \pend{(FCT itself is pending)}. A study of the loss terms on Polyp-PVT
+shows that the multi-view supervision accounts for most of the gain on ETIS, and that the consistency
+term and its weights complete it: FCT is the only variant that improves all five test sets on
+average \pend{(one row of the study is still running)}.
 
 Our contributions are summarized as follows:
 \begin{itemize}
-\item We show that, in binary segmentation under full supervision, a cross-entropy consistency
-loss between two views acts, pixel by pixel, as a reweighted supervised loss whose direction
-depends on which view is closer to the label.
-\item We derive from this identity FCT, a label-aware flip-consistency rule whose single
-constant is set by the decision threshold. It plugs into any binary segmentation network and
-adds no cost at inference.
+\item We propose FCT, a plug-in training loss that supervises three orientation views of each image
+and draws their predictions together with a label-weighted consistency term. It changes no
+architecture and adds no cost at inference.
+\item We show that, for binary labels, a consistency term between two views acts pixel by pixel as
+the supervised loss with an adaptive weight, which is negative where a view is drawn toward a less
+accurate one, and we derive label-aware weights whose single constant is set by the decision
+threshold.
 \item We evaluate FCT on three architectures, five test sets and six paired seeds with confidence
-intervals, and dissect it component by component. It improves ETIS for all three networks, raises
-the five-set mean Dice on every seed for two of them, and makes the predictions of both markedly
-more flip-consistent.
+intervals, and dissect the loss into its terms. It improves ETIS for all three networks, raises the
+five-set mean Dice on every seed for two of them, and makes the predictions of both markedly more
+flip-consistent.
 \end{itemize}
 % ---- sections/related.tex ----
 \section{Related Work}
@@ -217,43 +219,45 @@ constrained architecture or a multiplied inference cost. All these methods treat
 equally reliable or weigh them by the model's own confidence, since none uses the label to
 compare views; under full supervision, FCT does exactly that.
 
-\subsection{Self-Distillation and Label-Aware Weighting}
+\subsection{Loss Reweighting and Distillation}
 
-Knowledge distillation trains a student to match the soft predictions of a
-teacher~\cite{hinton2015distilling}. In self-distillation, the teacher is the model itself: an
-earlier generation of the same architecture~\cite{furlanello2018born}, its own deeper
-layers~\cite{zhang2019byot}, its predictions from the previous epoch~\cite{kim2021pskd} or
-dropout-sampled versions of itself~\cite{lee2023sddropout}.
-Closest to our setting, data-distortion guided self-distillation~\cite{xu2019ddgsd} makes a
-network agree with itself on two distorted copies of an image under full supervision, treating
-both copies alike. The consistency term of FCT is also self-distillation across views, but it
-compares teacher and student against the label, pixel by pixel.
+Training losses for segmentation often change how much each pixel counts. Focal
+loss~\cite{lin2017focal} and online hard example mining~\cite{shrivastava2016ohem} emphasize examples
+with a high loss, and the structure loss used by PraNet-style networks emphasizes pixels near
+boundaries~\cite{wei2020f3net}. By our identity, the consistency term of FCT belongs to this family: it
+reweights the supervised loss of each pixel, by how the pixel's error in one view compares with its
+error in another view of the same image.
 
-Several works relate distillation to the ground truth. Analyses of the distillation gradient
-show that it rescales the supervised gradient according to the teacher's confidence in the true
-class~\cite{furlanello2018born,tang2020understanding}, self-distillation over several rounds
-averages the labels of instances with correlated features~\cite{jeong2025selfdistill}, and Yuan et
+A consistency term toward a detached prediction also resembles knowledge distillation, which trains a
+student to match the soft predictions of a teacher~\cite{hinton2015distilling}. In self-distillation,
+the teacher is the model itself: an earlier generation of the same
+architecture~\cite{furlanello2018born}, its own deeper layers~\cite{zhang2019byot}, its predictions
+from the previous epoch~\cite{kim2021pskd} or dropout-sampled versions of
+itself~\cite{lee2023sddropout}. Closest to our setting, data-distortion guided
+self-distillation~\cite{xu2019ddgsd} makes a network agree with itself on two distorted copies of an
+image under full supervision, treating both copies alike. Analyses of the distillation gradient show
+that it rescales the supervised gradient according to the teacher's confidence in the true
+class~\cite{furlanello2018born,tang2020understanding}, self-distillation over several rounds averages
+the labels of instances with correlated features~\cite{jeong2025selfdistill}, and Yuan et
 al.~\cite{yuan2020revisiting} relate distillation to label smoothing. Decoupled knowledge
-distillation~\cite{zhao2022dkd} splits the loss exactly into target-class and non-target-class
-terms, knowledge adjustment~\cite{wen2021preparing}, refined logits~\cite{sun2025rld} and label
-revision~\cite{lan2025labelrevision} correct teacher predictions that contradict the label, and confidence-aware multi-teacher distillation~\cite{zhang2022camkd} weights each
-teacher by how close its predictions are to the label. For segmentation, structured distillation
-transfers pixel-wise and pairwise knowledge from a large network to a compact
-one~\cite{liu2019skd}. Loss reweighting also changes how much
-each example counts: focal loss~\cite{lin2017focal} and online hard example
-mining~\cite{shrivastava2016ohem} emphasize examples with high loss, and the structure loss used
-by PraNet-style networks emphasizes pixels near boundaries~\cite{wei2020f3net}. By our identity,
-FCT belongs to this family: it reweights the supervised gradient of each pixel, but by how the
-pixel's error compares with that of another view of the same pixel, within one network rather
-than across separate teachers.
+distillation~\cite{zhao2022dkd} splits the loss exactly into target-class and non-target-class terms;
+knowledge adjustment~\cite{wen2021preparing}, refined logits~\cite{sun2025rld} and label
+revision~\cite{lan2025labelrevision} correct teacher predictions that contradict the label; and
+confidence-aware multi-teacher distillation~\cite{zhang2022camkd} weights each teacher by how close its
+predictions are to the label. For segmentation, structured distillation transfers pixel-wise and
+pairwise knowledge from a large network to a compact one~\cite{liu2019skd}. FCT is not a
+teacher--student scheme: it is one loss on the views of one image, within one network, and it neither
+corrects a target nor ranks separate teachers, but weights each pixel's consistency term by comparing
+the errors of two views with the label.
 % ---- sections/analysis.tex ----
-\section{When Does a Consistency Pull Help?}
+\section{Consistency as Reweighted Supervision}
 \label{sec:analysis}
 
-This section shows that, when the label is binary, a consistency loss toward a detached teacher
-view acts at every pixel as the supervised loss, rescaled by a factor that compares the errors of
-the two views. The sign of this factor tells, pixel by pixel, whether the pull helps or hurts, and
-Section~\ref{sec:method} builds FCT on it.
+This section analyses the consistency term of a multi-view training loss. It shows that, when the
+label is binary, a consistency term that draws one view toward the detached prediction of another
+acts at every pixel as the supervised loss, rescaled by a factor that compares the errors of the
+two views. The sign of this factor tells, pixel by pixel, whether the term helps or hurts, and
+Section~\ref{sec:method} builds the weights of FCT on it.
 
 \subsection{Notation}
 \label{sec:notation}
@@ -278,14 +282,14 @@ pixel by pixel.
 
 At a pixel $i$, the error of a view is $e_i=|p_i-y_i|\in[0,1]$, and the view is correct at the
 decision threshold of $\frac12$ if $e_i<\frac12$. We drop the index $i$ when a statement holds for
-each pixel separately. A consistency loss pulls a student view $s$ toward a teacher view $t$ whose
-probability $p_t$ is detached, that is, treated as a constant. We write
+each pixel separately. A consistency term draws a view $s$ toward the prediction $p_t$ of a target
+view $t$, which is detached, that is, treated as a constant. We write
 \begin{equation}
 \ell(z_s;q)=-q\log\sigma(z_s)-(1-q)\log\big(1-\sigma(z_s)\big)
 \label{eq:bce}
 \end{equation}
-for the binary cross-entropy of the student's logit $z_s$ with a target $q\in[0,1]$. The consistency
-loss is $\ell(z_s;p_t)$ and the supervised loss is $\ell(z_s;y)$, and their gradients with respect to
+for the binary cross-entropy of the view's logit $z_s$ with a target $q\in[0,1]$. The consistency
+term is $\ell(z_s;p_t)$ and the supervised loss is $\ell(z_s;y)$, and their gradients with respect to
 the logit are
 \begin{equation}
 \frac{\partial\ell(z_s;p_t)}{\partial z_s}=p_s-p_t,\qquad
@@ -293,7 +297,7 @@ the logit are
 \label{eq:grads}
 \end{equation}
 
-\subsection{Consistency as Reweighted Supervision}
+\subsection{Consistency as an Adaptive Pixel Weight}
 \label{sec:identity}
 
 The two gradients in Eq.~\eqref{eq:grads} are parallel whenever the label is binary: the consistency
@@ -306,7 +310,7 @@ Let $y\in\{0,1\}$, $p_s,p_t\in[0,1]$ and $p_s\neq y$. Then
 \frac{\partial\ell(z_s;p_t)}{\partial z_s}=\Big(1-\frac{e_t}{e_s}\Big)\frac{\partial\ell(z_s;y)}{\partial z_s},
 \label{eq:identity}
 \end{equation}
-where $e_s=|p_s-y|$ and $e_t=|p_t-y|$ denote the errors of the student and the teacher.
+where $e_s=|p_s-y|$ and $e_t=|p_t-y|$ denote the errors of the view and of its target.
 \end{proposition}
 
 \begin{IEEEproof}
@@ -315,22 +319,33 @@ $y=1$, $p-y=-(1-p)$. Hence $p_s-p_t=(p_s-y)-(p_t-y)=(1-2y)(e_s-e_t)=(p_s-y)(1-e_
 step uses $(1-2y)e_s=p_s-y$ and $e_s>0$. Eq.~\eqref{eq:grads} completes the proof.
 \end{IEEEproof}
 
-The identity needs no assumption on the network or on the teacher's probability, only a binary
+The identity needs no assumption on the network or on the target's probability, only a binary
 label, which places both errors on the same side of the target. It also holds for a squared-error
-pull on probabilities, whose gradient with respect to $p_s$ is again $p_s-p_t$. Summed over pixels
+term on probabilities, whose gradient with respect to $p_s$ is again $p_s-p_t$. Summed over pixels
 and differentiated with respect to the network parameters $\theta$, Eq.~\eqref{eq:identity} reads
 \begin{equation}
 \nabla_\theta\sum_i \ell(z_{s,i};p_{t,i})=\sum_i \omega_i\,\nabla_\theta\,\ell(z_{s,i};y_i),
 \qquad \omega_i=1-\frac{e_{t,i}}{e_{s,i}},
 \label{eq:weights}
 \end{equation}
-with the weights $\omega_i$ held constant. A consistency loss is thus a supervised loss with
+with the weights $\omega_i$ held constant. A consistency term is thus a supervised loss with
 per-pixel weights, and some of these weights are negative.
+
+When the view is also supervised, the two terms add. With a cross-entropy supervised term of weight
+$\beta$ and a consistency term of weight $\gamma$, the gradient on the view's logit is
+\begin{equation}
+\big(\beta+\gamma\,\omega\big)\,(p_s-y),
+\label{eq:combined}
+\end{equation}
+so the consistency term changes only how much each pixel's supervised gradient counts. Under full
+supervision, it brings no information beyond the label: it acts as an adaptive pixel weight, as
+focal loss~\cite{lin2017focal} and the structure loss~\cite{wei2020f3net} do, but set by how the
+pixel's error in one view compares with its error in another.
 
 \begin{corollary}[Lag condition]
 \label{cor:lag}
 Under the conditions of Proposition~\ref{prop:identity}, a gradient step on $\ell(z_s;p_t)$ moves the
-student's probability toward the label if $e_t<e_s$, away from it if $e_t>e_s$, and not at all if
+view's probability toward the label if $e_t<e_s$, away from it if $e_t>e_s$, and not at all if
 $e_t=e_s$.
 \end{corollary}
 
@@ -340,42 +355,41 @@ Eq.~\eqref{eq:identity}. The supervised step $-\eta(p_s-y)$ moves $p_s$ toward $
 increasing, and $\omega>0$ if and only if $e_t<e_s$.
 \end{IEEEproof}
 
-To first order, the step lowers the student's error by $\eta\,\sigma'(z_s)(e_s-e_t)$, so we call
-$e_s-e_t$ the pull toward the label. Fig.~\ref{fig:pull}(a) maps it over the two errors. Below the
-diagonal, the teacher leads and the pull helps. Above it, the student leads and the pull hurts, in
-two ways. Where the teacher is wrong and the student right ($e_s<\frac12<e_t$), the pull drives a
-correct pixel toward a misclassification, with a strength $e_t-e_s$ that can approach that of a full
-supervised step. Where both are right ($e_s<e_t<\frac12$), the pull only lowers the student's
-confidence, and it stops when the student reaches the teacher, on the correct side of the threshold.
+To first order, the step lowers the view's error by $\eta\,\sigma'(z_s)(e_s-e_t)$, so we call $e_s-e_t$
+the movement toward the label. Fig.~\ref{fig:pull}(a) maps it over the two errors. Below the diagonal,
+the view lags behind its target, and the term helps. Above it, the view leads, and the term hurts, in
+two ways. Where the target is wrong and the view right ($e_s<\frac12<e_t$), the term drives a correct
+pixel toward a misclassification, with a strength $e_t-e_s$ that can approach that of a full supervised
+step. Where both are right ($e_s<e_t<\frac12$), the term only lowers the view's confidence, and it stops
+when the view reaches its target, on the correct side of the threshold.
 
 \begin{figure*}[t]
 \centering
 \includegraphics[width=0.96\textwidth]{figures/fig_pull.pdf}
-\caption{Pull toward the label exerted on a student view by a detached teacher view at one pixel, as
-a function of the student's error $e_s$ and the teacher's error $e_t$ (Proposition~\ref{prop:identity});
-dashed lines mark the decision threshold. (a)~An unweighted pull, $e_s-e_t$, pushes the student away
-from the label wherever it leads, even toward a wrong teacher (top left). (b)~The FCT weight of
-Eq.~\eqref{eq:weight}. (c)~With it, every pull toward the label is kept, every pull that moves the student
-away from the label toward a wrong teacher is removed, and the remaining pulls away from the label are
+\caption{Effect of a consistency term on the error of a view at one pixel, as a function of the view's
+error $e_s$ and the error $e_t$ of its detached target (Proposition~\ref{prop:identity}); dashed lines
+mark the decision threshold. (a)~Without a weight, the term moves the view away from the label wherever
+the view is the closer of the two, even toward a wrong target (top left). (b)~The FCT weight of
+Eq.~\eqref{eq:weight}. (c)~With it, every movement toward the label is kept, every movement away from
+the label toward a wrong target is removed, and the remaining movements away from the label are
 bounded by $1/8$.}
 \label{fig:pull}
 \end{figure*}
 
-Corollary~\ref{cor:lag} answers the question of our title at the level of a pixel. In
-semi-supervised learning, no label separates the two cases, so the views are pulled toward each
-other alike. Under full supervision, the label separates them at every pixel, and a pull can be kept
-where the teacher leads, and elsewhere only where it cannot reverse a correct decision.
-Section~\ref{sec:method} turns this rule into a weight.
+In semi-supervised learning, no label separates the two cases, so the views are drawn together alike.
+Under full supervision, the label separates them at every pixel: the term can keep its full weight
+where the view lags behind its target, and elsewhere act only where it cannot reverse a correct
+decision. Section~\ref{sec:method} turns this rule into the weights of the FCT loss.
 % ---- sections/method.tex ----
-\section{Label-Aware Flip-Consistency Training}
+\section{Flip-Consistent Training}
 \label{sec:method}
 
-FCT turns Corollary~\ref{cor:lag} into a training objective. Each training image is presented in three
-views, every view is supervised with the label, and the views teach each other only where the label
-shows that the teacher is closer to it, or where a pull cannot reverse a correct decision.
-Fig.~\ref{fig:overview} gives an overview. This section describes the supervised views, the pulls on
-the flipped views, the pull on the upright view and the full objective in turn, and then relates FCT
-to other consistency rules.
+FCT is a training loss. It replaces the supervised loss of a segmentation network with three parts:
+the supervised loss on three orientation views of each image, a consistency term that draws the
+predictions of the views together, and label-aware weights that decide, pixel by pixel, how much
+each view may move toward another (Fig.~\ref{fig:overview}). The network and its inference are
+unchanged. This section describes the three parts and the full loss, and then relates FCT to other
+losses.
 
 \begin{figure*}[t]
 \centering
@@ -432,7 +446,7 @@ to other consistency rules.
   \draw[flow, black!45] (y.west) -- (so.east);
   \draw[flow, black!45] (y.south west) -- (sv.east);
   \node[lab, above=1.4mm of sh, xshift=4mm] {(1) three supervised views};
-  % ---- (2) the label-aware pulls between the views' probabilities -----------------
+  % ---- (2) the consistency term between the views' probabilities -----------------
   \node[map] (po) at (8.75, 0)     {$p^{o}$};
   \node[map] (ph) at (10.95, 1.15) {$p^{h}$};
   \node[map] (pv) at (10.95, -1.15) {$p^{v}$};
@@ -441,23 +455,23 @@ to other consistency rules.
   \draw[pull, flipc] (po.south) to[bend right=28] node[lab, below left, pos=0.45, xshift=1mm] {$C_v$, weight $w_v$} (pv.west);
   \draw[pull, upc]   (pv.north) to[bend right=28] (po.east);
   \node[lab] at (9.95, 0.47) {$U$, gate $g$};
-  \node[lab] at (9.85, 2.25) {(2) label-aware pulls, $p=\sigma(z)$};
-  \node[lab, anchor=west] at (11.55, 0.35) {\textcolor{flipc}{\rule[0.5ex]{3mm}{1.2pt}} flip pulls:};
+  \node[lab] at (9.85, 2.25) {(2) label-aware consistency, $p=\sigma(z)$};
+  \node[lab, anchor=west] at (11.55, 0.35) {\textcolor{flipc}{\rule[0.5ex]{3mm}{1.2pt}} flipped views:};
   \node[lab, anchor=west] at (11.55, 0.0) {lag or margin};
-  \node[lab, anchor=west] at (11.55, -0.45) {\textcolor{upc}{\rule[0.5ex]{3mm}{1.2pt}} upright pull:};
+  \node[lab, anchor=west] at (11.55, -0.45) {\textcolor{upc}{\rule[0.5ex]{3mm}{1.2pt}} upright view:};
   \node[lab, anchor=west] at (11.55, -0.8) {best flip, gated};
-  \node[lab] at (9.85, -2.2) {arrow: teacher (detached) $\to$ student};
+  \node[lab] at (9.85, -2.2) {arrow: detached target $\to$ view it moves};
 \end{tikzpicture}
-\caption{Overview of the proposed FCT. (1)~An image and its horizontal and vertical flips pass through
-one network; the flipped outputs are flipped back, and each view is supervised with the host network's
-own loss, weighted $\frac13$. (2)~The views then teach each other, with the teacher's probability
-detached: the upright view pulls each flipped view with the lag-or-margin weight of
-Eq.~\eqref{eq:weight}, and the flipped view closest to the label pulls the upright view wherever it is
-more accurate. At test time, only the upright view is used.}
+\caption{Overview of the FCT loss. (1)~An image and its horizontal and vertical flips pass through one
+network; the flipped outputs are flipped back, and each view is supervised with the host network's own
+loss, weighted $\frac13$. (2)~A consistency term draws the predictions of the views together, each
+toward a detached target: the flipped views toward the upright view, with the lag-or-margin weight of
+Eq.~\eqref{eq:weight}, and the upright view toward the flipped view closest to the label, wherever that
+view is more accurate. At test time, only the upright view is used.}
 \label{fig:overview}
 \end{figure*}
 
-\subsection{Three Supervised Views}
+\subsection{Multi-View Supervision}
 \label{sec:views}
 
 Each image is passed through the network upright and flipped horizontally and vertically, and the
@@ -473,65 +487,68 @@ as the host forms it at test time. The factor $\frac13$ keeps the supervised los
 single-view training. On its own, Eq.~\eqref{eq:sup} is a deterministic form of flip augmentation:
 each view is tied to the label, but no view is tied to another.
 
-\subsection{Lag-or-Margin Flip Pulls}
+\subsection{Cross-View Consistency}
 \label{sec:flippull}
 
-Each flipped view is pulled toward the upright view, its teacher. Following
-Corollary~\ref{cor:lag}, the pull keeps its full strength where the flipped view lags behind the
-upright view, and it is weakened where the flipped view leads:
-\begin{equation}
-w^{k}_i=\begin{cases}1, & e^{k}_i\geq e^{o}_i,\\ \max\big(0,\,1-a\,e^{o}_i\big), & e^{k}_i<e^{o}_i,\end{cases}
-\label{eq:weight}
-\end{equation}
-where $e^{k}_i$ and $e^{o}_i$ denote the errors of the flipped and the upright view at pixel $i$, computed
-without gradient, and $a>0$ is a constant. The pull on flip $k$ averages the weighted consistency loss
-of Eq.~\eqref{eq:bce} over the image:
+The consistency term ties the views to each other. It draws each flipped view $k$ toward the detached
+upright prediction,
 \begin{equation}
 \mathcal{C}_k=\frac{1}{HW}\sum_{i} w^{k}_i\,\ell\big(z^{k}_i;p^{o}_i\big),
 \label{eq:flippull}
 \end{equation}
-with the upright probability $p^{o}$ detached.
-
-The constant $a$ follows from the decision threshold. On a leading pixel, the pull moves the flipped
-view away from the label (Corollary~\ref{cor:lag}), and Eq.~\eqref{eq:weight} keeps it in proportion
-to the margin $1-a\,e^{o}$. We ask two things of this margin. First, a pull toward a wrong teacher must
-vanish, $w=0$ whenever $e^{o}>\frac12$, which requires $a\geq2$. Second, a pull toward a correct
-teacher must survive however small its margin, $w>0$ whenever $e^{o}<\frac12$, which requires
-$a\leq2$. Hence $a=2$, and on a leading pixel with a correct teacher, $w=1-2e^{o}=|2p^{o}-1|$ is
-twice the teacher's distance from the threshold, that is, its margin rescaled to $[0,1]$. The constant is thus set by the threshold rather than tuned,
-and Section~\ref{sec:ablation} shows that the results are insensitive to it.
-
-With $a=2$, the pull on a leading pixel is weak. Its strength $w\,(e^{o}-e^{k})$ is at most
-$(1-2e^{o})\,e^{o}\leq\frac18$, against up to one for a supervised step (Fig.~\ref{fig:pull}(c)), and
-it vanishes when the flipped view reaches its teacher, on the correct side of the threshold. It thus
-keeps the two views consistent where both are right, as flip equivariance asks, without reversing a
-decision by itself.
-
-\subsection{Upright Pull}
-\label{sec:uppull}
-
-Eq.~\eqref{eq:weight} lets the upright view teach but never learn, although it is the view that the
-network sees at test time. The upright view is therefore also pulled toward the flipped view closest
-to the label, wherever that view leads:
+with the weights $w^{k}_i$ of Section~\ref{sec:weights}, and it draws the upright view toward the flipped
+view closest to the label, wherever that view is more accurate:
 \begin{equation}
 \mathcal{U}=\frac{1}{HW}\sum_{i} g_i\,\ell\big(z^{o}_i;p^{\ast}_i\big),\qquad g_i=\mathbf{1}\big[e^{\ast}_i<e^{o}_i\big],
 \label{eq:uppull}
 \end{equation}
 where $p^{\ast}_i$ denotes the detached probability of the flipped view with the smaller error at
-pixel $i$, and $e^{\ast}_i$ its error. By Corollary~\ref{cor:lag}, every pull in Eq.~\eqref{eq:uppull}
-moves the upright view toward the label, so it needs no margin term.
+pixel $i$, and $e^{\ast}_i$ its error. Together, the two directions let the more accurate side move the
+other: where the upright view is more accurate, the flipped views move toward it, and where a flipped
+view is more accurate, the upright view, which is the one used at test time, moves toward it. By
+Corollary~\ref{cor:lag}, every movement that the gate $g$ allows in Eq.~\eqref{eq:uppull} is toward the
+label.
 
-\subsection{Objective and Training}
+\subsection{Label-Aware Weights}
+\label{sec:weights}
+
+The weights decide how much each flipped view moves toward the upright view. Following
+Corollary~\ref{cor:lag}, the term keeps its full weight where the flipped view lags behind the upright
+view, and it is weakened where the flipped view leads:
+\begin{equation}
+w^{k}_i=\begin{cases}1, & e^{k}_i\geq e^{o}_i,\\ \max\big(0,\,1-a\,e^{o}_i\big), & e^{k}_i<e^{o}_i,\end{cases}
+\label{eq:weight}
+\end{equation}
+where $e^{k}_i$ and $e^{o}_i$ denote the errors of the flipped and the upright view at pixel $i$, computed
+without gradient, and $a>0$ is a constant.
+
+The constant $a$ follows from the decision threshold. On a leading pixel, the term moves the flipped
+view away from the label (Corollary~\ref{cor:lag}), and Eq.~\eqref{eq:weight} keeps it in proportion to
+the margin $1-a\,e^{o}$. We ask two things of this margin. First, a movement toward a wrong target must
+vanish, $w=0$ whenever $e^{o}>\frac12$, which requires $a\geq2$. Second, a movement toward a correct
+target must survive however small its margin, $w>0$ whenever $e^{o}<\frac12$, which requires
+$a\leq2$. Hence $a=2$, and on a leading pixel with a correct target, $w=1-2e^{o}=|2p^{o}-1|$ is twice
+the target's distance from the threshold, that is, its margin rescaled to $[0,1]$. The constant is thus
+set by the threshold rather than tuned, and Section~\ref{sec:ablation} shows that the results are
+insensitive to it.
+
+With $a=2$, the term on a leading pixel is weak. Its strength $w\,(e^{o}-e^{k})$ is at most
+$(1-2e^{o})\,e^{o}\leq\frac18$, against up to one for a supervised step (Fig.~\ref{fig:pull}(c)), and it
+vanishes when the flipped view reaches the upright prediction, on the correct side of the threshold. It
+thus keeps the two views consistent where both are right, as flip equivariance asks, without reversing a
+decision by itself.
+
+\subsection{Full Loss and Training}
 \label{sec:objective}
 
-The full objective adds the pulls to the supervised loss:
+The FCT loss adds the consistency term to the multi-view supervision:
 \begin{equation}
-\mathcal{L}=\mathcal{L}_{\mathrm{sup}}+\frac{\lambda}{2}\big(\mathcal{C}_h+\mathcal{C}_v\big)+\frac{\lambda}{2}\,\mathcal{U},
+\mathcal{L}_{\mathrm{FCT}}=\mathcal{L}_{\mathrm{sup}}+\frac{\lambda}{2}\big(\mathcal{C}_h+\mathcal{C}_v\big)+\frac{\lambda}{2}\,\mathcal{U},
 \label{eq:objective}
 \end{equation}
-where $\lambda\geq0$ weighs consistency against supervision. The two flip pulls share $\lambda$, and the
-upright pull receives the weight of one flip pull. The weight is ramped up linearly at the start of
-training,
+where $\lambda\geq0$ weighs consistency against supervision. The two flipped views share $\lambda$, and
+the upright view's term receives the weight of one flipped view's. The weight is ramped up linearly at
+the start of training,
 \begin{equation}
 \lambda_t=\lambda\,\min\big(1,\,t/t_0\big),
 \label{eq:ramp}
@@ -542,27 +559,35 @@ $t_0=300$.
 Three implementation choices keep the views comparable and the memory low. First, the three views of
 an image share one stochastic-depth mask~\cite{huang2016stochastic}, so that their differences reflect
 the flip rather than the random depth. Second, when a host trains at several input scales, FCT is
-applied at every scale. Third, the probabilities $p^{h}$ and $p^{v}$ of Eq.~\eqref{eq:uppull} come
-from passes without gradient that leave the running statistics of batch normalization unchanged. In our
+applied at every scale. Third, the probabilities $p^{h}$ and $p^{v}$ of Eq.~\eqref{eq:uppull} come from
+passes without gradient that leave the running statistics of batch normalization unchanged. In our
 current implementation, these passes run before the upright pass and the graph of each view is
 released after its backward pass, so only one view's computation graph is held in memory at a time;
 the runs reported in Section~\ref{sec:experiments} computed them after the upright pass, which gives
-the same objective at a higher peak memory. For each image and input scale, FCT thus runs five forward
-passes, three of them with gradients. At test time, the network is applied to the upright image only, exactly as without FCT,
-so FCT changes neither the architecture nor its inference cost.
+the same loss at a higher peak memory. For each image and input scale, FCT thus runs five forward
+passes, three of them with gradients. At test time, the network is applied to the upright image only,
+exactly as without FCT, so FCT changes neither the architecture nor its inference cost.
 
-\subsection{Relation to Other Consistency Rules}
+\subsection{Relation to Other Losses}
 \label{sec:relation}
 
-Eq.~\eqref{eq:weight} contains the usual rules as special cases or near neighbours, which
-Section~\ref{sec:ablation} compares. With $w=1$ everywhere, $\mathcal{C}_k$ is the unweighted
-transformation consistency of semi-supervised segmentation~\cite{bortsova2019consistency,li2021tcsm},
-applied here to labeled images; by Eq.~\eqref{eq:weights}, it mixes pulls toward and away from the
-label. Confidence thresholding~\cite{sohn2020fixmatch} keeps pulls whose teacher is confident, which
-includes confidently wrong teachers, the case that Corollary~\ref{cor:lag} rules out. Finally, a rule
-can use the label to judge the teacher alone, for example by weighting each pixel by whether and how
-confidently the upright view is correct. Such a rule ignores the student's error, so it cannot tell
-the lagging pixels, where a pull helps, from the leading ones, where it hurts. Of these rules, only FCT
+By Eq.~\eqref{eq:combined}, FCT is a supervised loss with adaptive pixel weights: on a flipped view,
+the supervised weight $\frac13$ is raised where the view lags behind the upright view and slightly
+lowered where it leads. This places FCT among losses that reweight pixels. Focal
+loss~\cite{lin2017focal} and online hard example mining~\cite{shrivastava2016ohem} weight a pixel by its
+own error, and the structure loss of PraNet-style networks~\cite{wei2020f3net} by its distance to a
+boundary; FCT weights it by how its error compares with that of another view of the same pixel.
+
+The weights of Eq.~\eqref{eq:weight} also contain the usual consistency rules as special cases or near
+neighbours, which Section~\ref{sec:ablation} compares. With $w=1$ everywhere, $\mathcal{C}_k$ is the
+unweighted transformation consistency of semi-supervised
+segmentation~\cite{bortsova2019consistency,li2021tcsm}, applied here to labeled images; by
+Eq.~\eqref{eq:weights}, it mixes positive and negative pixel weights. Confidence
+thresholding~\cite{sohn2020fixmatch} keeps the terms whose target is confident, which includes
+confidently wrong targets, the case that Corollary~\ref{cor:lag} rules out. Finally, a rule can use the
+label to judge the target alone, for example by weighting each pixel by whether and how confidently the
+upright view is correct. Such a rule ignores the error of the view being moved, so it cannot tell the
+lagging pixels, where the term helps, from the leading ones, where it hurts. Of these rules, only FCT
 compares the two errors, as Corollary~\ref{cor:lag} requires.
 % ---- sections/experiments.tex ----
 \section{Experiments}
@@ -573,9 +598,9 @@ made: FCT improves all three networks over their own baselines, most on
 unseen data (Section~\ref{sec:main}), and a label-aware variant generalizes to six more centres
 (Section~\ref{sec:polypgen}); FCT makes predictions more flip-consistent
 (Section~\ref{sec:flip}); a per-image analysis shows where its gains come from
-(Section~\ref{sec:where}); and a dissection of its components shows
-that its weight acts on the gradient as Corollary~\ref{cor:lag} predicts and that its constant needs no
-tuning (Section~\ref{sec:ablation}).
+(Section~\ref{sec:where}); and a study of the loss terms shows that the multi-view supervision gives
+most of the gain, while the label-aware weights shape the gradient as Corollary~\ref{cor:lag} predicts and
+need no tuning (Section~\ref{sec:ablation}).
 Section~\ref{sec:cost} reports its cost.
 
 \subsection{Datasets and Evaluation Protocol}
@@ -817,8 +842,8 @@ the flip gap on the training images by 84\% and 76\%. The reduction holds on eve
 row of the table. Two observations qualify it. First, flip consistency is not accuracy: the largest
 reduction on a test set, 70\% for Polyp-PVT on CVC-ClinicDB, comes with almost no change in Dice, and CVC-ColonDB and
 ETIS remain the least consistent sets after FCT. Second, training on flipped images lowers the flip
-gap by itself. In preliminary single runs of Polyp-PVT, supervising the three views without any pull,
-row~(b) of Table~\ref{tab:rules}, reached a five-set flip gap of 8.2\%, and the official random flip and
+gap by itself. In preliminary single runs of Polyp-PVT, the multi-view supervision of row~(b) of
+Table~\ref{tab:rules}, without the consistency term, reached a five-set flip gap of 8.2\%, and the official random flip and
 rotation augmentation reached 6.8\%, below that of FCT; yet the five-set mean Dice of the latter,
 85.75\%, was below that of every vanilla seed. A lower flip gap alone therefore does not explain the gains of FCT, and we
 read it as a symptom that the views are tied together, not as the cause of the gains.
@@ -924,25 +949,20 @@ largest gains, averaged over six seeds and both networks. Row 5: the image with 
 \subsection{Ablation Studies}
 \label{sec:ablation}
 
-\textit{Component dissection.} FCT has four components: the three supervised views of
-Eq.~\eqref{eq:sup}, the pulls on the flipped views, their label-aware weight of Eq.~\eqref{eq:weight},
-and the upright pull of Eq.~\eqref{eq:uppull}. Table~\ref{tab:rules} dissects them on Polyp-PVT, against
-the same vanilla runs throughout. Row (b) supervises the three views without any pull. It is the
-flip-augmentation control, and row (b) minus vanilla is the gain of the flips alone. Rows (c)--(e) add
-to row (b) the upright pull alone, the weighted flip pulls alone, and both, which is FCT. Their
-differences from row (b) decompose the gain of FCT over flip augmentation, and comparing row (e) with the
-two single additions shows whether the pulls add up. Rows (f) and (g) change only the weight function of
-FCT, to unweighted flip pulls and to the lag gate without its margin. We fixed the protocol before
-seeing these rows: rows (b) and (c) are trained with six seeds, and rows (f) and (g) with three seeds
-first, extended to six only if they land near FCT. \pend{Rows (b), (c), (f) and (g) are being trained.}
-ASGNet already offers a second test of FCT beyond flip augmentation: its own recipe trains with random
-horizontal flips, and FCT still raises its ETIS score by 1.69 points (Table~\ref{tab:main_asgnet}),
-although its five-set mean gain is borderline. Preliminary single unseeded runs of row (b) and of unweighted flip
-pulls without the upright pull reached five-set means of 86.56\% and 87.06\% and ETIS scores of 80.78\%
-and 80.49\%, against 87.08\% and 80.26\% for FCT over six seeds; single runs cannot rank variants that
-differ by less than a point. With six seeds, the paired CI of the difference between two variants spans
-about $\pm0.4$ to $\pm0.7$ points on the five-set mean, and with three seeds about 2.4 times more, so
-small effects will not be resolved.
+\textit{Loss terms.} The FCT loss has three parts: the multi-view supervision of Eq.~\eqref{eq:sup}, the
+consistency term of Eqs.~\eqref{eq:flippull} and~\eqref{eq:uppull}, and the label-aware weights of
+Eq.~\eqref{eq:weight}. Table~\ref{tab:rules} dissects them on Polyp-PVT, against the same vanilla runs
+throughout. Row (b) keeps only the multi-view supervision. It is also the flip-augmentation control,
+since it trains on exactly the views that FCT uses, with the same supervision. Rows (c)--(e) add the
+consistency term on the upright view, on the flipped views, and on both, which is FCT, so their
+differences from row (b) are the effect of the consistency term. Rows (f) and (g) change only the
+weights of FCT, to unweighted consistency and to the lag gate without its margin. We fixed the protocol
+before seeing these rows: rows (b) and (c) are trained with six seeds, and rows (f) and (g) with three
+seeds first, extended to six only if they land near FCT. \pend{Row (c) is being repeated after a failed
+run; rows (f) and (g) landed near FCT and are being extended to six seeds.} With six seeds, the paired
+CI of the difference between two variants spans about $\pm0.4$ to $\pm0.7$ points on the five-set
+mean, and with three seeds about 2.4 times more, so small differences between variants are not
+resolved.
 
 % ---- tables/tab_rules.tex ----
 %% Generated by make_tables_extra.py; do not edit by hand.
@@ -951,72 +971,79 @@ small effects will not be resolved.
 \footnotesize
 \setlength{\tabcolsep}{2.6pt}
 \begin{threeparttable}
-\caption{Component dissection of FCT on Polyp-PVT: paired mDice gains (points, 95\% CI), the effect of each component, test sets improved, flip gap and gradient alignment. Bold: CIs that exclude zero.}
+\caption{Ablation of the FCT loss terms on Polyp-PVT: paired mDice gains (points, 95\% CI), the effect of each term, test sets improved, flip gap and gradient alignment. Bold: CIs that exclude zero.}
 \label{tab:rules}
 \begin{tabular}{@{}l c c c c c c c c c@{}}
 \toprule
-Variant & Views & Flip pulls & Upright pull & Mean gain & ETIS gain & Component effect & Sets & Flip gap (\%) & Cosine \\
+& & \multicolumn{2}{c}{Consistency term} & & & & & & \\
+\cmidrule(lr){3-4}
+Variant & Views & Flipped & Upright & Mean gain & ETIS gain & Effect & Sets & Flip gap (\%) & Cosine \\
 \midrule
-\multicolumn{10}{@{}l}{\textit{Building FCT on the three supervised views}} \\
+\multicolumn{10}{@{}l}{\textit{Building the FCT loss on the multi-view supervision}} \\
 (a) Vanilla & -- & -- & -- & -- & -- & -- & -- & 12.5 & -- \\
-(b) Three views & \checkmark & -- & -- & \pend{pending} & \pend{pending} & -- & \pend{--} & \pend{--} & \pend{--} \\
-(c) + upright pull & \checkmark & -- & \checkmark & \pend{pending} & \pend{pending} & \pend{pending} & \pend{--} & \pend{--} & \pend{--} \\
-(d) + flip pulls & \checkmark & Eq.~\eqref{eq:weight} & -- & +0.47 [$-$0.02, 0.96] & \textbf{+1.97 [1.06, 2.87]} & \pend{pending} & 4/5 & 7.5 & 0.53 \\
-(e) + both (FCT) & \checkmark & Eq.~\eqref{eq:weight} & \checkmark & \textbf{+0.52 [0.15, 0.90]} & \textbf{+1.65 [0.88, 2.42]} & \pend{pending} & 5/5 & 7.5 & 0.53 \\
+(b) Multi-view supervision & \checkmark & -- & -- & +0.37 [$-$0.01, 0.74] & \textbf{+1.48 [0.32, 2.65]} & -- & 3/5 & \pend{--} & -- \\
+(c) + upright-view term & \checkmark & -- & \checkmark & \pend{pending} & \pend{pending} & \pend{pending} & \pend{--} & \pend{--} & \pend{--} \\
+(d) + flipped-view term & \checkmark & Eq.~\eqref{eq:weight} & -- & +0.47 [$-$0.02, 0.96] & \textbf{+1.97 [1.06, 2.87]} & +0.10 [$-$0.45, 0.66] & 4/5 & 7.5 & 0.53 \\
+(e) + both (FCT) & \checkmark & Eq.~\eqref{eq:weight} & \checkmark & \textbf{+0.52 [0.15, 0.90]} & \textbf{+1.65 [0.88, 2.42]} & +0.16 [$-$0.30, 0.62] & 5/5 & 7.5 & 0.53 \\
 \addlinespace[2pt]
-\multicolumn{10}{@{}l}{\textit{Changing the weight function of FCT}} \\
-(f) FCT, $w=1$ (3 seeds) & \checkmark & $w=1$ & \checkmark & \pend{pending} & \pend{pending} & \pend{pending} & \pend{--} & \pend{--} & \pend{--} \\
-(g) FCT, lag only (3 seeds) & \checkmark & lag only & \checkmark & \pend{pending} & \pend{pending} & \pend{pending} & \pend{--} & \pend{--} & \pend{--} \\
+\multicolumn{10}{@{}l}{\textit{Changing the weights of FCT}} \\
+(f) FCT, unweighted (3 seeds) & \checkmark & $w=1$ & \checkmark & +0.32 [$-$0.50, 1.14] & +1.47 [$-$1.40, 4.34] & +0.29 [$-$0.87, 1.45] & 3/5 & \pend{--} & 0.23 \\
+(g) FCT, lag only (3 seeds) & \checkmark & lag only & \checkmark & +0.32 [$-$0.45, 1.09] & +0.94 [$-$0.07, 1.94] & +0.29 [$-$1.65, 2.23] & 4/5 & \pend{--} & 0.56 \\
 \addlinespace[2pt]
-\multicolumn{10}{@{}l}{\textit{Another label-aware weight, without the upright pull}} \\
+\multicolumn{10}{@{}l}{\textit{Another label-aware weight, without the upright-view term}} \\
 (h) Graded weight & \checkmark & graded & -- & \textbf{+0.40 [0.13, 0.68]} & \textbf{+1.56 [0.53, 2.60]} & +0.06 [$-$0.60, 0.73] & 3/5 & 7.7 & 0.26 \\
 \bottomrule
 \end{tabular}
 \begin{tablenotes}[flushleft]
 \footnotesize
-\item Six seeds unless the row says otherwise. Mean and ETIS gain: over vanilla with the same seeds. Component effect, on the five-set mean, paired by seed: for rows (c)--(e), the row minus row (b), so the effect of the pulls added to the three views; for rows (f) and (g), FCT minus the row, the effect of FCT\textquotesingle s weight function; for row (h), row (d) minus row (h). Sets: test sets, of five, with a positive mean gain. Cosine: between the gradient of the flip pulls and that of the rest of the objective, measured every 50 batches and averaged over training and seeds; for row (e), the rest includes the upright pull. Lag only: $w=1$ where the flipped view lags and $0$ where it leads ($a\to\infty$). Graded: the confidence-graded weight of Section~\ref{sec:ablation}.
+\item Six seeds unless the row says otherwise. Mean and ETIS gain: over vanilla with the same seeds. Effect, on the five-set mean, paired by seed: for rows (c)--(e), the row minus row (b), the effect of the consistency term added to the multi-view supervision; for rows (f) and (g), FCT minus the row, the effect of FCT\textquotesingle s weights; for row (h), row (d) minus row (h). Sets: test sets, of five, with a positive mean gain. Cosine: between the gradient of the consistency term on the flipped views and that of the rest of the loss, measured every 50 batches and averaged over training and seeds; for rows (e)--(g), the rest includes the upright-view term. Lag only: $w=1$ where the flipped view lags and $0$ where it leads ($a\to\infty$). Graded: the confidence-graded weight of Section~\ref{sec:ablation}.
 \end{tablenotes}
 \end{threeparttable}
 \end{table*}
 
-The completed rows already answer two questions. First, the upright pull adds little on top of the
-weighted flip pulls: FCT minus row (d) is $+0.05$ $[-0.36, 0.47]$ points on the five-set mean, although FCT is the only variant
-so far that improves all five sets on average. Second, the form of the label-aware weight barely moves
-Dice. Row (h) replaces the lag-or-margin weight with the confidence-graded weight sketched in
+The multi-view supervision gives most of the gain on ETIS. On its own, row (b) raises ETIS by 1.48
+points $[0.32, 2.65]$ on five of six seeds, against 1.65 points for FCT, and the five-set mean by 0.37
+points $[-0.01, 0.74]$. This gain is not that of random flip augmentation: ASGNet already trains with
+random flips, and FCT still raises its ETIS score by 1.69 points (Table~\ref{tab:main_asgnet}). The consistency term and its weights complete the loss: FCT is the only
+variant that improves all five sets on average. The multi-view supervision alone lowers CVC-ClinicDB
+by 0.48 points, and FCT recovers it, although this difference is borderline, $+0.66$ $[-0.01, 1.34]$.
+The consistency term's own effect on the five-set mean, row (e) minus row (b), is $+0.16$
+$[-0.30, 0.62]$ points, and the weight functions are within seed variation of one another: FCT minus
+rows (f) and (g) is $+0.29$ $[-0.87, 1.45]$ and $+0.29$ $[-1.65, 2.23]$ points on three seeds, and
+row (d) minus row (h) is $+0.06$ $[-0.60, 0.73]$. Row (h) uses the confidence-graded weight sketched in
 Section~\ref{sec:relation}, which keeps a weight of 1 where the upright view is correct, raises it to
-$1+p^{o}$ on missed polyp pixels and lowers it to $1-p^{o}$ on false-positive pixels; row (d) minus row
-(h) is $+0.06$ $[-0.60, 0.73]$. Rows (d), (e) and (h) all improve ETIS with CIs above zero.
+$1+p^{o}$ on missed polyp pixels and lowers it to $1-p^{o}$ on false-positive pixels.
 
-Their gradients, however, differ sharply. The gradient of the lag-or-margin pulls has a cosine of 0.53
-with the gradient of the rest of the objective, against 0.26 for the confidence-graded weight, and it is
-about a third smaller relative to it: the ratio of the two gradients' norms is 0.08, against 0.12. The gap holds throughout training
-(Fig.~\ref{fig:cos}) and on every seed: the cosine ranges over $[0.47, 0.56]$ for rows (d) and (e) and
-over $[0.18, 0.33]$ for row (h). This is the effect that Eq.~\eqref{eq:weights} predicts. The
-confidence-graded weight keeps full weight on the pulls of leading flipped views, which point away from
-the label (Corollary~\ref{cor:lag}), and even raises the weight where the upright view misses a polyp.
-Leading pixels are common: in the runs where we logged them, Polyp-PVT with $a<2$ and PraNet-V2, a flipped
-view leads the upright view on about 44\% of its pixels at the end of training, although this is a share
-of pixels, not of the gradient. \pend{Row (f) will show
-whether the weight's effect on the gradient carries over to Dice.}
+The weights shape the gradient of the consistency term, as Eq.~\eqref{eq:weights} predicts. With the
+lag-based weights of rows (d), (e) and (g), the gradient of the term on the flipped views has a cosine
+of 0.53 to 0.56 with the gradient of the rest of the loss, and between 0.47 and 0.56 on every seed.
+Without weights, row (f), it falls to 0.23, and with the confidence-graded weight, row (h), to 0.26;
+these two stay between 0.18 and 0.33 on every seed (Fig.~\ref{fig:cos}). Unweighted and
+confidence-graded terms keep full weight on leading flipped views, whose pixel weights in
+Eq.~\eqref{eq:weights} are negative, so part of their gradient points away from the label. Leading
+pixels are common: in the runs where we logged them, Polyp-PVT with $a<2$ and PraNet-V2, a flipped view
+leads the upright view on about 44\% of its pixels at the end of training, although this is a share of
+pixels, not of the gradient. The ratio of the two gradients' norms follows the same order: 0.07 to 0.08
+with lag-based weights, against 0.11 without weights and 0.12 with the graded weight.
 
 \begin{figure}[t]
 \centering
 \includegraphics[width=\columnwidth]{figures/fig_cos.pdf}
-\caption{Cosine between the gradient of the flip pulls and that of the rest of the objective during
-training of Polyp-PVT, for rows (d), (e) and (h) of Table~\ref{tab:rules}; per-epoch means, smoothed over five epochs,
-with the SD over six seeds. The lag-or-margin weight doubles the alignment of the consistency gradient
-with the rest of the objective.}
+\caption{Cosine between the gradient of the consistency term on the flipped views and that of the rest
+of the loss during training of Polyp-PVT, for rows (d), (e), (f) and (h) of Table~\ref{tab:rules};
+per-epoch means, smoothed over five epochs, with the SD over seeds. The lag-based weights double the
+alignment of the consistency gradient with the rest of the loss.}
 \label{fig:cos}
 \end{figure}
 
 \textit{Constant $a$.} The results are insensitive to $a$, so the constant needs no tuning
-(Table~\ref{tab:sweep}; row (g) of Table~\ref{tab:rules}, \pend{pending}, adds the limit $a\to\infty$,
-which keeps only the lagging pulls). Every value in $\{0.5, 1, 1.5, 2\}$ improves ETIS by 1.6 to 2.1 points, and none
+(Table~\ref{tab:sweep}; row (g) of Table~\ref{tab:rules} adds the limit $a\to\infty$, which keeps only
+the lagging terms). Every value in $\{0.5, 1, 1.5, 2\}$ improves ETIS by 1.6 to 2.1 points, and none
 differs significantly from $a=2$ on the five-set mean. The value $a=2$ is the only one that improves all
 five sets on average, but this distinction is within seed variation. These runs do not fully explain
 the insensitivity. The case that $a=2$ removes, a flipped view that leads a wrong upright view, is rare: it
 arises on only 0.16\% of the pixels at the end of training (Polyp-PVT, $a<2$) and on 0.24\% (PraNet-V2).
-But $a$ also scales the pull on the far more frequent leading pixels with a correct upright view, and
+But $a$ also scales the term on the far more frequent leading pixels with a correct upright view, and
 this change, too, leaves Dice unchanged within seed variation.
 
 % ---- tables/tab_sweep.tex ----
@@ -1051,8 +1078,8 @@ $a$ & Mean gain & ETIS gain & Sets & $a=2$ minus row \\
 FCT multiplies the training time per epoch by 3.6 for Polyp-PVT, 3.3 for PraNet-V2 and 3.7 for ASGNet
 (Table~\ref{tab:cost}). This matches its five forward and three backward passes for each image and input scale,
 which cost $11/3\approx3.7$ times a single view if a backward pass costs twice a forward pass. Without
-the upright pull, the two passes without gradient are not needed, and the measured factor drops to
-3.0. Inference
+the term on the upright view, the two passes without gradient are not needed, and the measured factor
+drops to 3.0. Inference
 is unchanged: the trained network is the host network, applied once to the upright image.
 
 % ---- tables/tab_cost.tex ----
@@ -1070,12 +1097,12 @@ Network & Vanilla & FCT & Ratio & Inference \\
 Polyp-PVT & 0.56 & 2.01 & 3.6$\times$ & unchanged \\
 PraNet-V2 & 0.93 & 3.11 & 3.3$\times$ & unchanged \\
 ASGNet & 1.01 & 3.70 & 3.7$\times$ & unchanged \\
-Polyp-PVT, no upright pull & 0.56 & 1.67 & 3.0$\times$ & unchanged \\
+Polyp-PVT, no upright-view term & 0.56 & 1.67 & 3.0$\times$ & unchanged \\
 \bottomrule
 \end{tabular}
 \begin{tablenotes}[flushleft]
 \footnotesize
-\item Training time excludes the per-epoch evaluation. One \pend{[GPU model]} GPU per run. No upright pull: row (d) of Table~\ref{tab:rules}. Inference: the same network, applied once to the upright image.
+\item Training time excludes the per-epoch evaluation. One \pend{[GPU model]} GPU per run. No upright-view term: row (d) of Table~\ref{tab:rules}. Inference: the same network, applied once to the upright image.
 \end{tablenotes}
 \end{threeparttable}
 \end{table}
@@ -1083,58 +1110,67 @@ Polyp-PVT, no upright pull & 0.56 & 1.67 & 3.0$\times$ & unchanged \\
 \section{Discussion and Limitations}
 \label{sec:discussion}
 
+\textit{What each part of the loss does.} The study of the loss terms separates two roles. The
+multi-view supervision carries most of the accuracy gain on the unseen ETIS set. The consistency term
+and its label-aware weights complete the loss: with them, FCT is the only variant that improves all
+five test sets on average, and the consistency gradient is twice as well aligned with supervision as
+without the weights. By
+Eq.~\eqref{eq:combined}, this division of roles is expected: under full supervision, the consistency
+term brings no information beyond the label, only a pixel weight, so its effect on accuracy is that
+of a reweighting of the supervised loss, and its weights decide whether that reweighting ever turns
+against the label.
+
 \textit{Why the unseen sets?} For all three networks, FCT gains most on ETIS, the test set from
 another centre, and, for PraNet-V2, it also gains on CVC-ColonDB. These are the two sets on which every
-network is least accurate, and on which Polyp-PVT and PraNet-V2 are least flip-consistent. One explanation is the hypothesis of Section~\ref{sec:intro}: tying the views
+network is least accurate, and on which Polyp-PVT and PraNet-V2 are least flip-consistent. One
+explanation is the hypothesis of Section~\ref{sec:intro}: training on the flipped views and tying them
 together discourages cues that change under a flip, and such cues are unlikely to transfer to a new
 centre. Our data support this only indirectly. The flip gap falls on every set, but its fall does not
-predict where Dice rises, and a single run with flip and rotation augmentation lowered it without
-any gain. The experiments do not yet separate three candidate causes of the gains: training on the
-supervised flipped views, flip consistency itself, and a consistency gradient better aligned with
-supervision. Preliminary single runs (Section~\ref{sec:ablation}) leave open that the first two account
-for much of the gain; the pending rows of the component dissection (Table~\ref{tab:rules}) are
-designed to settle this.
+predict where Dice rises, and a single run with flip and rotation augmentation lowered it without any
+gain.
 
 \textit{Scope of the analysis.} Proposition~\ref{prop:identity} needs a binary label and a
-cross-entropy or squared-error pull. It applies to each class of a multi-label task, one class against
-the rest, but not directly to a softmax over several classes, where the two error vectors need not be
-parallel. Soft labels also break it, since the two errors may then lie on opposite sides of the target;
-FCT therefore binarizes the label at 0.5 when it computes the weights, including at rescaled input
-sizes, where interpolation softens the mask boundary. The analysis also stops at the logits: it does
-not describe how the network shares the per-pixel pulls through its parameters.
+cross-entropy or squared-error consistency term. It applies to each class of a multi-label task, one
+class against the rest, but not directly to a softmax over several classes, where the two error vectors
+need not be parallel and a consistency term can carry information beyond the label. Soft labels also
+break it, since the two errors may then lie on opposite sides of the target; FCT therefore binarizes the
+label at 0.5 when it computes the weights, including at rescaled input sizes, where interpolation
+softens the mask boundary. The analysis also stops at the logits: it does not describe how the network
+shares the per-pixel terms through its parameters.
 
 \textit{Cost.} FCT multiplies the training time by about 3.5 and leaves inference unchanged. Without
-the upright pull, the factor drops to three (Table~\ref{tab:cost}) at a similar accuracy
+the term on the upright view, the factor drops to three (Table~\ref{tab:cost}) at a similar accuracy
 (Table~\ref{tab:rules}); applying FCT to part of each batch would lower it further.
 
-\textit{Limits of the evidence.} The evidence has five limits. First, it covers three networks
-and one training set of 1,288 images; of the five standard test sets, only
-ETIS comes from another centre, and on the six PolypGen centres only the confidence-graded variant
-has been tested so far. Second, the reported epoch is selected on the test sets. The selection is the
-same for both arms, and the gains remain positive on average without it but are not significant at the
-last epoch (Fig.~\ref{fig:curves}); the absolute scores are optimistic. Third, the weight was developed
-over several preliminary variants scored on the same five test sets, so these sets also guided its
-design. The confidence-graded weight, for instance, was carried to six seeds because of its result on
-seed~1, which row (h) of Table~\ref{tab:rules} includes; on seeds 2--6 alone, its five-set mean gain is
-$+0.32$ $[0.08, 0.56]$. The gain of FCT is smallest on seed~1, $+0.18$ points, and is $+0.59$
-$[0.15, 1.03]$ on seeds 2--6. Fourth, six seeds resolve gains of about half a point on the five-set
-mean, but not the smaller effects on single sets, whose CIs are up to several points wide. Fifth,
-$\lambda$ was set on Polyp-PVT and not retuned for the other networks, and four rows of the component
-dissection are still pending.
+\textit{Limits of the evidence.} The evidence has five limits. First, it covers three networks and one
+training set of 1,288 images; of the five standard test sets, only ETIS comes from another centre, and
+on the six PolypGen centres only the confidence-graded variant has been tested so far. Second, the
+reported epoch is selected on the test sets. The selection is the same for both arms, and the gains
+remain positive on average without it but are not significant at the last epoch
+(Fig.~\ref{fig:curves}); the absolute scores are optimistic. Third, the weights were developed over
+several preliminary variants scored on the same five test sets, so these sets also guided their design.
+The confidence-graded weight, for instance, was carried to six seeds because of its result on seed~1,
+which row (h) of Table~\ref{tab:rules} includes; on seeds 2--6 alone, its five-set mean gain is $+0.32$
+$[0.08, 0.56]$. The gain of FCT is smallest on seed~1, $+0.18$ points, and is $+0.59$ $[0.15, 1.03]$ on
+seeds 2--6. Fourth, six seeds resolve gains of about half a point on the five-set mean, but not the
+smaller differences between variants of the loss, whose CIs are up to several points wide. Fifth,
+$\lambda$ was set on Polyp-PVT and not retuned for the other networks, and the study of the loss terms
+covers Polyp-PVT only, with one row still pending and two at three seeds.
 % ---- sections/conclusion.tex ----
 \section{Conclusion}
 \label{sec:conclusion}
 
-We asked which view should teach when a segmentation network is trained to agree with itself under
-flips. For binary labels, an identity answers it: a consistency pull toward a detached teacher view is
-the supervised pull, rescaled by one minus the ratio of the two views' errors. The pull therefore moves
-the student toward the label only where the teacher is closer to it. We turned this lag condition into
-FCT, which supervises an image and its two flips and lets a view teach another only where the label
-allows it, with a constant fixed by the decision threshold. FCT improved the unseen ETIS set for all
-three networks we tested, and the five-set mean Dice of Polyp-PVT and PraNet-V2 on every seed. It also made the
-predictions more flip-consistent and left inference unchanged. Future work will extend the identity to
-multi-class segmentation and to other transformations, such as rotations, and test FCT itself on the
-six PolypGen centres, where a label-aware variant already improves on every seed.
+We proposed flip-consistent training, a plug-in loss for polyp segmentation that supervises each image
+in three orientation views and draws their predictions together with a consistency term. For binary
+labels, we showed that such a term acts as the supervised loss with an adaptive pixel weight, which is
+negative where a view is drawn toward a less accurate one, and we gave FCT label-aware weights that
+remove this case, with a constant fixed by the decision threshold. FCT improved the unseen ETIS set for
+all three networks we tested, and the five-set mean Dice of Polyp-PVT and PraNet-V2 on every seed,
+while making their predictions more flip-consistent and leaving inference unchanged. A study of the loss
+terms attributed most of the ETIS gain to the multi-view supervision; the full loss, with its
+consistency term and weights, was the only variant that improved all five test sets. Future work will extend the
+loss to multi-class segmentation and to other transformations, such as rotations, and test FCT itself on
+the six PolypGen centres, where a label-aware variant already improves on every seed.
 
 % ASGNet's main table, when all six seeds finish (it overwrites the placeholder tables/main_asgnet.tex).
 % make_table.py needs a summary over seeds 1-6, so score them together first, in the Polyp-PVT repo:
@@ -1520,6 +1556,21 @@ G.~Wang, W.~Li, M.~Aertsen, J.~Deprest, S.~Ourselin, and T.~Vercauteren,
   image segmentation with convolutional neural networks,''
   \emph{Neurocomputing}, vol. 338, pp. 34--45, 2019.
 
+\bibitem{lin2017focal}
+T.-Y. Lin, P.~Goyal, R.~Girshick, K.~He, and P.~Dollar, ``Focal loss for dense
+  object detection,'' in \emph{2017 IEEE International Conference on Computer
+  Vision (ICCV)}, 2017, pp. 2999--3007.
+
+\bibitem{shrivastava2016ohem}
+A.~Shrivastava, A.~Gupta, and R.~Girshick, ``Training region-based object
+  detectors with online hard example mining,'' in \emph{2016 IEEE Conference on
+  Computer Vision and Pattern Recognition (CVPR)}, 2016, pp. 761--769.
+
+\bibitem{wei2020f3net}
+J.~Wei, S.~Wang, and Q.~Huang, ``{F$^3$Net}: Fusion, feedback and focus for
+  salient object detection,'' \emph{Proceedings of the AAAI Conference on
+  Artificial Intelligence}, vol.~34, no.~07, pp. 12\,321--12\,328, 2020.
+
 \bibitem{hinton2015distilling}
 G.~Hinton, O.~Vinyals, and J.~Dean, ``Distilling the knowledge in a neural
   network,'' arXiv:1503.02531, 2015.
@@ -1580,21 +1631,6 @@ H.~Zhang, D.~Chen, and C.~Wang, ``Confidence-aware multi-teacher knowledge
 Y.~Liu, K.~Chen, C.~Liu, Z.~Qin, Z.~Luo, and J.~Wang, ``Structured knowledge
   distillation for semantic segmentation,'' in \emph{2019 IEEE/CVF Conference
   on Computer Vision and Pattern Recognition (CVPR)}, 2019, pp. 2599--2608.
-
-\bibitem{lin2017focal}
-T.-Y. Lin, P.~Goyal, R.~Girshick, K.~He, and P.~Dollar, ``Focal loss for dense
-  object detection,'' in \emph{2017 IEEE International Conference on Computer
-  Vision (ICCV)}, 2017, pp. 2999--3007.
-
-\bibitem{shrivastava2016ohem}
-A.~Shrivastava, A.~Gupta, and R.~Girshick, ``Training region-based object
-  detectors with online hard example mining,'' in \emph{2016 IEEE Conference on
-  Computer Vision and Pattern Recognition (CVPR)}, 2016, pp. 761--769.
-
-\bibitem{wei2020f3net}
-J.~Wei, S.~Wang, and Q.~Huang, ``{F$^3$Net}: Fusion, feedback and focus for
-  salient object detection,'' \emph{Proceedings of the AAAI Conference on
-  Artificial Intelligence}, vol.~34, no.~07, pp. 12\,321--12\,328, 2020.
 
 \bibitem{huang2016stochastic}
 G.~Huang, Y.~Sun, Z.~Liu, D.~Sedra, and K.~Q. Weinberger, ``Deep networks with

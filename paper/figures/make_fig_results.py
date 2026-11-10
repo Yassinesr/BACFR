@@ -1,6 +1,6 @@
 """Result figures, all read from the Polyp-PVT repo's logs and the extracted facts:
   fig_seeds.pdf   per-seed paired gains (FCT - vanilla, mDice points) per test set, both networks
-  fig_cos.pdf     cosine between the flip-pull gradient and the rest of the gradient, per epoch,
+  fig_cos.pdf     cosine between the gradient of the consistency term on the flipped views and the rest, per epoch,
                   for the three label-aware weight rules on Polyp-PVT (mean +- SD over six seeds)
   fig_curves.pdf  five-set mean Dice of the training-time evaluator after every epoch, vanilla and
                   FCT, both networks (mean +- SD over six seeds): the view without epoch selection
@@ -95,13 +95,13 @@ def parse(arm, seed):
 
 
 # gradient alignment of the three label-aware rules (Polyp-PVT)
-RULES = [('Confidence-graded weight', 'S3SIG', GREY, '-'), ('Lag-or-margin, no upright pull', 'S3LM', LBLUE, '-'),
-         ('FCT', 'S3LMUP', BLUE, '-')]
+RULES = [('(h) graded', 'S3SIG', GREY, '-'), ('(f) unweighted', 'S3FUP', '#6250d6', '-'), ('(d) no upright-view term', 'S3LM', LBLUE, '-'),
+         ('(e) FCT', 'S3LMUP', BLUE, '-')]
 fig, ax = plt.subplots(figsize=(3.5, 1.9))
 style(ax, 'y')
 summary = {}
 for label, arm, color, ls in RULES:
-    per = [parse(arm, s)[0] for s in range(1, 7)]
+    per = [parse(arm, s)[0] for s in range(1, 7) if os.path.isfile(os.path.join(REPO, 'logs_%s_s%d.txt' % (arm, s)))]
     ep = sorted(set.intersection(*[set(p) for p in per]))
     M = np.array([[p[e] for e in ep] for p in per])
     summary[arm] = float(M.mean())
@@ -115,7 +115,7 @@ ax.set_xlabel('Epoch')
 ax.set_ylabel('Gradient cosine')
 ax.set_xlim(1, 99)
 ax.set_ylim(0, 0.8)
-ax.legend(loc='lower center', bbox_to_anchor=(0.5, 1.0), ncol=3, handlelength=1.4, columnspacing=1.0)
+ax.legend(loc='lower center', bbox_to_anchor=(0.5, 1.0), ncol=4, handlelength=1.2, columnspacing=0.8, fontsize=6.3)
 fig.tight_layout()
 fig.savefig(os.path.join(OUTD, 'fig_cos.pdf'))
 print('wrote fig_cos.pdf; mean over epochs and seeds of the per-epoch means:', summary)

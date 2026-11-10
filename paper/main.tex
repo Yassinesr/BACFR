@@ -20,31 +20,31 @@
 
 \begin{document}
 
-\title{Which View Should Teach? Label-Aware Flip Consistency for Generalizable Polyp Segmentation}
+\title{Flip-Consistent Training: A Plug-In Loss for Generalizable Polyp Segmentation}
 \author{\pend{Authors}}
 \maketitle
 
 \begin{abstract}
-Polyp segmentation networks lose accuracy on centres unseen in training. A mirrored
-polyp is still a polyp, so a reliable model should predict the mirrored mask for a
-mirrored image; we observe that trained models do not, and are least flip-consistent on
-the hardest test sets. Flip consistency regularization is a natural remedy, but it comes
-from semi-supervised learning, where no label says which view is correct. We show that,
-in binary segmentation with labels available, a cross-entropy consistency pull toward a
-teacher view is a reweighted supervised pull: it moves the student view toward the label
-only where the teacher is closer to it. Building on this identity, we propose label-aware
-flip-consistency training (FCT), in which each view is pulled at full strength only
-toward a more accurate view, and never toward a misclassification it has avoided. The
-rule's one constant is set by the decision threshold rather than tuned, and FCT leaves
-the network and its inference unchanged. Experiments with three representative architectures on five public benchmarks, each repeated over six
-random seeds, show that FCT improves Dice on the unseen ETIS dataset for all three networks, and the
-five-set mean on every seed for Polyp-PVT and PraNet-V2, whose flip inconsistency it also markedly
-reduces. Notably, FCT improves PraNet-V2 on ETIS by 3.6 Dice points.
+Polyp segmentation networks lose accuracy on centres unseen in training, and their predictions change
+when an image is mirrored, although a mirrored polyp is still a polyp. We propose flip-consistent
+training (FCT), a plug-in training loss that leaves the network and its inference unchanged. FCT
+supervises each image in three orientation views, upright and flipped horizontally and vertically,
+and adds a consistency term that draws the predictions of the views together. We show that, for
+binary labels, such a term acts on each pixel as the supervised loss with an adaptive weight, which
+is negative where a view is drawn toward a less accurate one. FCT therefore weights its consistency
+term with the label, so that no view is drawn toward a misclassification it has avoided, with a
+single constant set by the decision threshold. Experiments with three architectures on five public
+benchmarks, each repeated over six random seeds, show that FCT improves Dice on the unseen ETIS
+dataset for all three networks, and the five-set mean on every seed for Polyp-PVT and PraNet-V2,
+whose flip inconsistency it also markedly reduces. A study of the loss terms attributes most of the
+ETIS gain to the multi-view supervision; the full loss, with its consistency term and weights, is the
+only variant that improves all five test sets. Notably, FCT improves PraNet-V2 on ETIS by 3.6 Dice
+points.
 \end{abstract}
 
 \begin{IEEEkeywords}
-Polyp segmentation, domain generalization, consistency regularization, flip equivariance,
-self-distillation.
+Polyp segmentation, domain generalization, training loss, consistency regularization, flip
+equivariance.
 \end{IEEEkeywords}
 
 \input{sections/introduction}

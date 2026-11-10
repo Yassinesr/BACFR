@@ -1,26 +1,26 @@
-\section{Label-Aware Flip-Consistency Training}
+\section{Flip-Consistent Training}
 \label{sec:method}
 
-FCT turns Corollary~\ref{cor:lag} into a training objective. Each training image is presented in three
-views, every view is supervised with the label, and the views teach each other only where the label
-shows that the teacher is closer to it, or where a pull cannot reverse a correct decision.
-Fig.~\ref{fig:overview} gives an overview. This section describes the supervised views, the pulls on
-the flipped views, the pull on the upright view and the full objective in turn, and then relates FCT
-to other consistency rules.
+FCT is a training loss. It replaces the supervised loss of a segmentation network with three parts:
+the supervised loss on three orientation views of each image, a consistency term that draws the
+predictions of the views together, and label-aware weights that decide, pixel by pixel, how much
+each view may move toward another (Fig.~\ref{fig:overview}). The network and its inference are
+unchanged. This section describes the three parts and the full loss, and then relates FCT to other
+losses.
 
 \begin{figure*}[t]
 \centering
 \input{figures/overview}
-\caption{Overview of the proposed FCT. (1)~An image and its horizontal and vertical flips pass through
-one network; the flipped outputs are flipped back, and each view is supervised with the host network's
-own loss, weighted $\frac13$. (2)~The views then teach each other, with the teacher's probability
-detached: the upright view pulls each flipped view with the lag-or-margin weight of
-Eq.~\eqref{eq:weight}, and the flipped view closest to the label pulls the upright view wherever it is
-more accurate. At test time, only the upright view is used.}
+\caption{Overview of the FCT loss. (1)~An image and its horizontal and vertical flips pass through one
+network; the flipped outputs are flipped back, and each view is supervised with the host network's own
+loss, weighted $\frac13$. (2)~A consistency term draws the predictions of the views together, each
+toward a detached target: the flipped views toward the upright view, with the lag-or-margin weight of
+Eq.~\eqref{eq:weight}, and the upright view toward the flipped view closest to the label, wherever that
+view is more accurate. At test time, only the upright view is used.}
 \label{fig:overview}
 \end{figure*}
 
-\subsection{Three Supervised Views}
+\subsection{Multi-View Supervision}
 \label{sec:views}
 
 Each image is passed through the network upright and flipped horizontally and vertically, and the
@@ -36,65 +36,68 @@ as the host forms it at test time. The factor $\frac13$ keeps the supervised los
 single-view training. On its own, Eq.~\eqref{eq:sup} is a deterministic form of flip augmentation:
 each view is tied to the label, but no view is tied to another.
 
-\subsection{Lag-or-Margin Flip Pulls}
+\subsection{Cross-View Consistency}
 \label{sec:flippull}
 
-Each flipped view is pulled toward the upright view, its teacher. Following
-Corollary~\ref{cor:lag}, the pull keeps its full strength where the flipped view lags behind the
-upright view, and it is weakened where the flipped view leads:
-\begin{equation}
-w^{k}_i=\begin{cases}1, & e^{k}_i\geq e^{o}_i,\\ \max\big(0,\,1-a\,e^{o}_i\big), & e^{k}_i<e^{o}_i,\end{cases}
-\label{eq:weight}
-\end{equation}
-where $e^{k}_i$ and $e^{o}_i$ denote the errors of the flipped and the upright view at pixel $i$, computed
-without gradient, and $a>0$ is a constant. The pull on flip $k$ averages the weighted consistency loss
-of Eq.~\eqref{eq:bce} over the image:
+The consistency term ties the views to each other. It draws each flipped view $k$ toward the detached
+upright prediction,
 \begin{equation}
 \mathcal{C}_k=\frac{1}{HW}\sum_{i} w^{k}_i\,\ell\big(z^{k}_i;p^{o}_i\big),
 \label{eq:flippull}
 \end{equation}
-with the upright probability $p^{o}$ detached.
-
-The constant $a$ follows from the decision threshold. On a leading pixel, the pull moves the flipped
-view away from the label (Corollary~\ref{cor:lag}), and Eq.~\eqref{eq:weight} keeps it in proportion
-to the margin $1-a\,e^{o}$. We ask two things of this margin. First, a pull toward a wrong teacher must
-vanish, $w=0$ whenever $e^{o}>\frac12$, which requires $a\geq2$. Second, a pull toward a correct
-teacher must survive however small its margin, $w>0$ whenever $e^{o}<\frac12$, which requires
-$a\leq2$. Hence $a=2$, and on a leading pixel with a correct teacher, $w=1-2e^{o}=|2p^{o}-1|$ is
-twice the teacher's distance from the threshold, that is, its margin rescaled to $[0,1]$. The constant is thus set by the threshold rather than tuned,
-and Section~\ref{sec:ablation} shows that the results are insensitive to it.
-
-With $a=2$, the pull on a leading pixel is weak. Its strength $w\,(e^{o}-e^{k})$ is at most
-$(1-2e^{o})\,e^{o}\leq\frac18$, against up to one for a supervised step (Fig.~\ref{fig:pull}(c)), and
-it vanishes when the flipped view reaches its teacher, on the correct side of the threshold. It thus
-keeps the two views consistent where both are right, as flip equivariance asks, without reversing a
-decision by itself.
-
-\subsection{Upright Pull}
-\label{sec:uppull}
-
-Eq.~\eqref{eq:weight} lets the upright view teach but never learn, although it is the view that the
-network sees at test time. The upright view is therefore also pulled toward the flipped view closest
-to the label, wherever that view leads:
+with the weights $w^{k}_i$ of Section~\ref{sec:weights}, and it draws the upright view toward the flipped
+view closest to the label, wherever that view is more accurate:
 \begin{equation}
 \mathcal{U}=\frac{1}{HW}\sum_{i} g_i\,\ell\big(z^{o}_i;p^{\ast}_i\big),\qquad g_i=\mathbf{1}\big[e^{\ast}_i<e^{o}_i\big],
 \label{eq:uppull}
 \end{equation}
 where $p^{\ast}_i$ denotes the detached probability of the flipped view with the smaller error at
-pixel $i$, and $e^{\ast}_i$ its error. By Corollary~\ref{cor:lag}, every pull in Eq.~\eqref{eq:uppull}
-moves the upright view toward the label, so it needs no margin term.
+pixel $i$, and $e^{\ast}_i$ its error. Together, the two directions let the more accurate side move the
+other: where the upright view is more accurate, the flipped views move toward it, and where a flipped
+view is more accurate, the upright view, which is the one used at test time, moves toward it. By
+Corollary~\ref{cor:lag}, every movement that the gate $g$ allows in Eq.~\eqref{eq:uppull} is toward the
+label.
 
-\subsection{Objective and Training}
+\subsection{Label-Aware Weights}
+\label{sec:weights}
+
+The weights decide how much each flipped view moves toward the upright view. Following
+Corollary~\ref{cor:lag}, the term keeps its full weight where the flipped view lags behind the upright
+view, and it is weakened where the flipped view leads:
+\begin{equation}
+w^{k}_i=\begin{cases}1, & e^{k}_i\geq e^{o}_i,\\ \max\big(0,\,1-a\,e^{o}_i\big), & e^{k}_i<e^{o}_i,\end{cases}
+\label{eq:weight}
+\end{equation}
+where $e^{k}_i$ and $e^{o}_i$ denote the errors of the flipped and the upright view at pixel $i$, computed
+without gradient, and $a>0$ is a constant.
+
+The constant $a$ follows from the decision threshold. On a leading pixel, the term moves the flipped
+view away from the label (Corollary~\ref{cor:lag}), and Eq.~\eqref{eq:weight} keeps it in proportion to
+the margin $1-a\,e^{o}$. We ask two things of this margin. First, a movement toward a wrong target must
+vanish, $w=0$ whenever $e^{o}>\frac12$, which requires $a\geq2$. Second, a movement toward a correct
+target must survive however small its margin, $w>0$ whenever $e^{o}<\frac12$, which requires
+$a\leq2$. Hence $a=2$, and on a leading pixel with a correct target, $w=1-2e^{o}=|2p^{o}-1|$ is twice
+the target's distance from the threshold, that is, its margin rescaled to $[0,1]$. The constant is thus
+set by the threshold rather than tuned, and Section~\ref{sec:ablation} shows that the results are
+insensitive to it.
+
+With $a=2$, the term on a leading pixel is weak. Its strength $w\,(e^{o}-e^{k})$ is at most
+$(1-2e^{o})\,e^{o}\leq\frac18$, against up to one for a supervised step (Fig.~\ref{fig:pull}(c)), and it
+vanishes when the flipped view reaches the upright prediction, on the correct side of the threshold. It
+thus keeps the two views consistent where both are right, as flip equivariance asks, without reversing a
+decision by itself.
+
+\subsection{Full Loss and Training}
 \label{sec:objective}
 
-The full objective adds the pulls to the supervised loss:
+The FCT loss adds the consistency term to the multi-view supervision:
 \begin{equation}
-\mathcal{L}=\mathcal{L}_{\mathrm{sup}}+\frac{\lambda}{2}\big(\mathcal{C}_h+\mathcal{C}_v\big)+\frac{\lambda}{2}\,\mathcal{U},
+\mathcal{L}_{\mathrm{FCT}}=\mathcal{L}_{\mathrm{sup}}+\frac{\lambda}{2}\big(\mathcal{C}_h+\mathcal{C}_v\big)+\frac{\lambda}{2}\,\mathcal{U},
 \label{eq:objective}
 \end{equation}
-where $\lambda\geq0$ weighs consistency against supervision. The two flip pulls share $\lambda$, and the
-upright pull receives the weight of one flip pull. The weight is ramped up linearly at the start of
-training,
+where $\lambda\geq0$ weighs consistency against supervision. The two flipped views share $\lambda$, and
+the upright view's term receives the weight of one flipped view's. The weight is ramped up linearly at
+the start of training,
 \begin{equation}
 \lambda_t=\lambda\,\min\big(1,\,t/t_0\big),
 \label{eq:ramp}
@@ -105,25 +108,33 @@ $t_0=300$.
 Three implementation choices keep the views comparable and the memory low. First, the three views of
 an image share one stochastic-depth mask~\cite{huang2016stochastic}, so that their differences reflect
 the flip rather than the random depth. Second, when a host trains at several input scales, FCT is
-applied at every scale. Third, the probabilities $p^{h}$ and $p^{v}$ of Eq.~\eqref{eq:uppull} come
-from passes without gradient that leave the running statistics of batch normalization unchanged. In our
+applied at every scale. Third, the probabilities $p^{h}$ and $p^{v}$ of Eq.~\eqref{eq:uppull} come from
+passes without gradient that leave the running statistics of batch normalization unchanged. In our
 current implementation, these passes run before the upright pass and the graph of each view is
 released after its backward pass, so only one view's computation graph is held in memory at a time;
 the runs reported in Section~\ref{sec:experiments} computed them after the upright pass, which gives
-the same objective at a higher peak memory. For each image and input scale, FCT thus runs five forward
-passes, three of them with gradients. At test time, the network is applied to the upright image only, exactly as without FCT,
-so FCT changes neither the architecture nor its inference cost.
+the same loss at a higher peak memory. For each image and input scale, FCT thus runs five forward
+passes, three of them with gradients. At test time, the network is applied to the upright image only,
+exactly as without FCT, so FCT changes neither the architecture nor its inference cost.
 
-\subsection{Relation to Other Consistency Rules}
+\subsection{Relation to Other Losses}
 \label{sec:relation}
 
-Eq.~\eqref{eq:weight} contains the usual rules as special cases or near neighbours, which
-Section~\ref{sec:ablation} compares. With $w=1$ everywhere, $\mathcal{C}_k$ is the unweighted
-transformation consistency of semi-supervised segmentation~\cite{bortsova2019consistency,li2021tcsm},
-applied here to labeled images; by Eq.~\eqref{eq:weights}, it mixes pulls toward and away from the
-label. Confidence thresholding~\cite{sohn2020fixmatch} keeps pulls whose teacher is confident, which
-includes confidently wrong teachers, the case that Corollary~\ref{cor:lag} rules out. Finally, a rule
-can use the label to judge the teacher alone, for example by weighting each pixel by whether and how
-confidently the upright view is correct. Such a rule ignores the student's error, so it cannot tell
-the lagging pixels, where a pull helps, from the leading ones, where it hurts. Of these rules, only FCT
+By Eq.~\eqref{eq:combined}, FCT is a supervised loss with adaptive pixel weights: on a flipped view,
+the supervised weight $\frac13$ is raised where the view lags behind the upright view and slightly
+lowered where it leads. This places FCT among losses that reweight pixels. Focal
+loss~\cite{lin2017focal} and online hard example mining~\cite{shrivastava2016ohem} weight a pixel by its
+own error, and the structure loss of PraNet-style networks~\cite{wei2020f3net} by its distance to a
+boundary; FCT weights it by how its error compares with that of another view of the same pixel.
+
+The weights of Eq.~\eqref{eq:weight} also contain the usual consistency rules as special cases or near
+neighbours, which Section~\ref{sec:ablation} compares. With $w=1$ everywhere, $\mathcal{C}_k$ is the
+unweighted transformation consistency of semi-supervised
+segmentation~\cite{bortsova2019consistency,li2021tcsm}, applied here to labeled images; by
+Eq.~\eqref{eq:weights}, it mixes positive and negative pixel weights. Confidence
+thresholding~\cite{sohn2020fixmatch} keeps the terms whose target is confident, which includes
+confidently wrong targets, the case that Corollary~\ref{cor:lag} rules out. Finally, a rule can use the
+label to judge the target alone, for example by weighting each pixel by whether and how confidently the
+upright view is correct. Such a rule ignores the error of the view being moved, so it cannot tell the
+lagging pixels, where the term helps, from the leading ones, where it hurts. Of these rules, only FCT
 compares the two errors, as Corollary~\ref{cor:lag} requires.
